@@ -1,6 +1,8 @@
 import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
+import { Provider } from 'react-redux'
 
+import { store } from '@/app/store'
 import { ThemeProvider } from '@/components/theme-provider'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 
@@ -16,9 +18,11 @@ declare module '@tanstack/react-router' {
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-    <StrictMode>
-        <ThemeProvider defaultTheme="dark">
-            <RouterProvider router={router} />
-        </ThemeProvider>
-    </StrictMode>,
+  <StrictMode>
+    <ThemeProvider defaultTheme="dark">
+      <Provider store={store}>
+        <RouterProvider router={router} />
+      </Provider>
+    </ThemeProvider>
+  </StrictMode>,
 )
