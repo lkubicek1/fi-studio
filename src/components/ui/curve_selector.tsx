@@ -1,5 +1,7 @@
+import { useEffect } from 'react'
+
 import { useAppDispatch, useAppSelector } from '@/app/hooks'
-import { selectActiveCurve, selectSelectedCurve, setSelectedCurve } from '@/app/curveSelectionSlice'
+import { cacheCurveData, selectActiveCurve, selectSelectedCurve, setSelectedCurve } from '@/app/curveSelectionSlice'
 import { curveSources } from '@/services/api/curves.ts'
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './select.tsx'
@@ -8,6 +10,12 @@ function CurveSelector() {
   const dispatch = useAppDispatch()
   const selectedCurve = useAppSelector(selectSelectedCurve)
   const activeCurve = useAppSelector(selectActiveCurve)
+
+  useEffect(() => {
+    if (selectedCurve) {
+      void dispatch(cacheCurveData(selectedCurve))
+    }
+  }, [dispatch, selectedCurve])
 
   return (
     <div className="space-y-2">
@@ -20,8 +28,12 @@ function CurveSelector() {
         </SelectTrigger>
         <SelectContent align="end" className="border-border">
           {curveSources.map((curve) => (
-            <SelectItem key={curve.key} value={curve.key}>
-              {curve.title}
+            <SelectItem
+              key={curve.key}
+              value={curve.key}
+              disabled={curve.requiresExternalConfiguration}
+            >
+              {curve.requiresExternalConfiguration ? `${curve.title} (Needs external config)` : curve.title}
             </SelectItem>
           ))}
         </SelectContent>

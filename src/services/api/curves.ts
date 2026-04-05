@@ -1,4 +1,13 @@
-export const curveSources = [
+export type CurveSource = {
+  key: string
+  title: string
+  url: string
+  kind: string
+  market: string
+  requiresExternalConfiguration?: boolean
+}
+
+export const curveSources: CurveSource[] = [
   {
     key: 'ust_par_nominal',
     title: 'US Treasury Par',
@@ -20,12 +29,15 @@ export const curveSources = [
     kind: 'bootstrap_input',
     market: 'USD',
   },
+  // TODO: These sources need external configuration before they can be enabled in the UI.
+  // FRED entries need a real API key, and ECB entries need a CORS-safe API endpoint or proxy.
   {
     key: 'fred_sofr',
     title: 'US SOFR',
     url: 'https://api.stlouisfed.org/fred/series/observations?series_id=SOFR&api_key=YOUR_FRED_KEY&file_type=json',
     kind: 'front_end_reference',
     market: 'USD',
+    requiresExternalConfiguration: true,
   },
   {
     key: 'fred_dgs2',
@@ -33,6 +45,7 @@ export const curveSources = [
     url: 'https://api.stlouisfed.org/fred/series/observations?series_id=DGS2&api_key=YOUR_FRED_KEY&file_type=json',
     kind: 'benchmark_series',
     market: 'USD',
+    requiresExternalConfiguration: true,
   },
   {
     key: 'fred_dgs5',
@@ -40,6 +53,7 @@ export const curveSources = [
     url: 'https://api.stlouisfed.org/fred/series/observations?series_id=DGS5&api_key=YOUR_FRED_KEY&file_type=json',
     kind: 'benchmark_series',
     market: 'USD',
+    requiresExternalConfiguration: true,
   },
   {
     key: 'fred_dgs10',
@@ -47,6 +61,7 @@ export const curveSources = [
     url: 'https://api.stlouisfed.org/fred/series/observations?series_id=DGS10&api_key=YOUR_FRED_KEY&file_type=json',
     kind: 'benchmark_series',
     market: 'USD',
+    requiresExternalConfiguration: true,
   },
   {
     key: 'fred_dgs30',
@@ -54,6 +69,7 @@ export const curveSources = [
     url: 'https://api.stlouisfed.org/fred/series/observations?series_id=DGS30&api_key=YOUR_FRED_KEY&file_type=json',
     kind: 'benchmark_series',
     market: 'USD',
+    requiresExternalConfiguration: true,
   },
   {
     key: 'ecb_yc_dataset',
@@ -61,6 +77,7 @@ export const curveSources = [
     url: 'https://data.ecb.europa.eu/data/datasets/YC',
     kind: 'published_curve_dataset',
     market: 'EUR',
+    requiresExternalConfiguration: true,
   },
   {
     key: 'ecb_spot_10y_example',
@@ -68,5 +85,8 @@ export const curveSources = [
     url: 'https://data.ecb.europa.eu/data/datasets/YC/YC.B.U2.EUR.4F.G_N_A.SV_C_YM.SR_10Y',
     kind: 'published_spot_curve',
     market: 'EUR',
+    requiresExternalConfiguration: true,
   },
-];
+]
+
+export const selectableCurveSources = curveSources.filter((curve) => !curve.requiresExternalConfiguration)
