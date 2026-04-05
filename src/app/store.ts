@@ -1,10 +1,12 @@
 import { configureStore } from '@reduxjs/toolkit'
 import { setupListeners } from '@reduxjs/toolkit/query'
 
+import { curveSelectionReducer } from '@/app/curveSelectionSlice'
 import { baseApi } from '@/services/api/baseApi'
 
 export const store = configureStore({
   reducer: {
+    curveSelection: curveSelectionReducer,
     [baseApi.reducerPath]: baseApi.reducer,
   },
   middleware: (getDefaultMiddleware) =>

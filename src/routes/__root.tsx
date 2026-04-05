@@ -9,7 +9,7 @@ export const Route = createRootRoute({
 function RootLayout() {
   return (
     <div className="min-h-svh bg-background">
-      <header className="border-b">
+      <header className="border-b-2 border-primary">
         <div className="flex items-center justify-between mx-auto flex w-full max-w-7xl">
           <div className="flex items-center gap-6 px-4 py-3 text-sm">
             <div className="flex gap-3 pr-12 items-center">
@@ -28,7 +28,7 @@ function RootLayout() {
           <MarketStatus />
         </div>
       </header>
-      <main className="mx-auto grid w-full max-w-7xl gap-4 p-4 md:grid-cols-[2fr_1fr]">
+      <main className="container mx-auto p-6 max-w-7xl">
         <Outlet />
       </main>
     </div>
