@@ -11,7 +11,13 @@ import {
   selectSelectedCurveLatestQuoteDate,
 } from '@/app/curveSelectionSlice'
 import { cn } from '@/lib/utils'
-import { buildTreasuryDerivedCurveNodes, type TreasuryDerivedCurveNode } from '@/services/finance/treasury.ts'
+import {
+  buildTreasuryDerivedCurveNodes,
+  type TreasuryDerivedCurveNode,
+  type TreasuryInterpolationMethod,
+} from '@/services/finance/treasury.ts'
+
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './select.tsx'
 
 function formatRate(value: number | null) {
   return typeof value === 'number' ? `${value.toFixed(2)}%` : '—'
@@ -390,6 +396,32 @@ const derivedColumnDefs: ColDef<TreasuryDerivedCurveNode>[] = [
   },
 ]
 
+type DerivedInterpolationStep = 1 | 3 | 6 | 12
+
+const derivedInterpolationStepOptions: Array<{ value: DerivedInterpolationStep; label: string }> = [
+  { value: 1, label: '1M' },
+  { value: 3, label: '3M' },
+  { value: 6, label: '6M' },
+  { value: 12, label: '12M' },
+]
+
+const derivedInterpolationMethodOptions: Array<{ value: TreasuryInterpolationMethod; label: string }> = [
+  { value: 'linear_discount_factor', label: 'Linear DF' },
+  { value: 'log_linear_discount_factor', label: 'Log-Linear DF' },
+]
+
+const interpolationMethodHeading = 'METHOD'
+const interpolationStepHeading = 'STEP'
+const interpolationTargetLabel = 'Interpolation Target: Discount Factor'
+const workspaceBadgeClassName = 'inline-flex h-8 items-center whitespace-nowrap border border-border bg-background px-2.5 text-xs tracking-wide text-muted-foreground'
+const workspaceHeaderGridTemplateColumns = [
+  `${Math.max(...derivedInterpolationMethodOptions.map((option) => option.label.length)) + 6}ch`,
+  `${Math.max(...derivedInterpolationStepOptions.map((option) => option.label.length)) + 6}ch`,
+  'max-content',
+  'max-content',
+  'max-content',
+].join(' ')
+
 type CurveWorkspaceTabKey = 'dataset' | 'derived' | 'spot' | 'chart'
 
 type CurveWorkspaceTab = {
@@ -475,7 +507,17 @@ function createLinearTicks(min: number, max: number, count: number) {
   return Array.from({ length: count }, (_, index) => min + step * index)
 }
 
-function DerivedLayerChart({ nodes }: { nodes: TreasuryDerivedCurveNode[] }) {
+function DerivedLayerChart({
+  nodes,
+  ariaLabel,
+  showCurveLine = true,
+  showInterpolatedLegend = true,
+}: {
+  nodes: TreasuryDerivedCurveNode[]
+  ariaLabel: string
+  showCurveLine?: boolean
+  showInterpolatedLegend?: boolean
+}) {
   if (nodes.length === 0) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -517,7 +559,7 @@ function DerivedLayerChart({ nodes }: { nodes: TreasuryDerivedCurveNode[] }) {
   }
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full" preserveAspectRatio="none" role="img" aria-label="Derived layer discount factor by year fraction chart">
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full" preserveAspectRatio="none" role="img" aria-label={ariaLabel}>
       <rect x="0" y="0" width={width} height={height} fill="var(--background)" opacity="0.35" />
 
       {yTicks.map((tick) => {
@@ -549,7 +591,23 @@ function DerivedLayerChart({ nodes }: { nodes: TreasuryDerivedCurveNode[] }) {
       <line x1={padding.left} y1={height - padding.bottom} x2={width - padding.right} y2={height - padding.bottom} stroke="var(--muted-foreground)" opacity="0.9" />
       <line x1={padding.left} y1={padding.top} x2={padding.left} y2={height - padding.bottom} stroke="var(--muted-foreground)" opacity="0.9" />
 
-      <polyline fill="none" points={linePath} stroke="var(--primary)" strokeOpacity="0.8" strokeWidth="2" />
+      <g transform={`translate(${width - padding.right - 136}, ${padding.top + 6})`}>
+        <rect x="0" y="0" width="136" height="42" fill="var(--background)" fillOpacity="0.72" stroke="var(--border)" />
+        <circle cx="14" cy="14" r="4.5" fill="var(--primary)" stroke="var(--background)" strokeWidth="1.5" />
+        <text x="26" y="18" fill="var(--card-foreground)" fontSize="10">
+          Anchor Node
+        </text>
+        {showInterpolatedLegend ? (
+          <>
+            <circle cx="14" cy="30" r="3.25" fill="var(--background)" stroke="var(--muted-foreground)" strokeWidth="1.3" />
+            <text x="26" y="34" fill="var(--muted-foreground)" fontSize="10">
+              Interpolated Node
+            </text>
+          </>
+        ) : null}
+      </g>
+
+      {showCurveLine ? <polyline fill="none" points={linePath} stroke="var(--primary)" strokeOpacity="0.8" strokeWidth="2" /> : null}
 
       {chartPoints.map((point) => (
         <circle
@@ -568,26 +626,92 @@ function DerivedLayerChart({ nodes }: { nodes: TreasuryDerivedCurveNode[] }) {
       <text x={padding.left} y={16} fill="var(--muted-foreground)" fontSize="11" letterSpacing="0.18em">
         DISCOUNT FACTOR
       </text>
-      <text x={width - padding.right} y={height - 8} fill="var(--muted-foreground)" fontSize="11" letterSpacing="0.18em" textAnchor="end">
-        YEAR FRACTION TO MATURITY
+      <text x={width / 2 + padding.left} y={height} fill="var(--muted-foreground)" fontSize="11" letterSpacing="0.18em" textAnchor="end">
+        YEARS TO MATURITY
       </text>
     </svg>
   )
 }
 
-function DerivedLayerWorkspace({ instruments }: { instruments: BootstrapInstrument[] }) {
-  const derivedNodes = buildTreasuryDerivedCurveNodes(instruments, { interpolationIntervalMonths: 1 })
+function DerivedLayerWorkspace({
+  instruments,
+  interpolationIntervalMonths,
+  interpolationMethod,
+  onInterpolationIntervalMonthsChange,
+  onInterpolationMethodChange,
+}: {
+  instruments: BootstrapInstrument[]
+  interpolationIntervalMonths: DerivedInterpolationStep
+  interpolationMethod: TreasuryInterpolationMethod
+  onInterpolationIntervalMonthsChange: (value: DerivedInterpolationStep) => void
+  onInterpolationMethodChange: (value: TreasuryInterpolationMethod) => void
+}) {
+  const derivedNodes = buildTreasuryDerivedCurveNodes(instruments, {
+    interpolationIntervalMonths,
+    interpolationMethod,
+  })
   const anchorCount = derivedNodes.filter((node) => node.nodeType === 'anchor').length
   const interpolatedCount = derivedNodes.length - anchorCount
 
   return (
     <div className="border border-border bg-background/80 p-2">
-      <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] tracking-wide text-muted-foreground">
-        <span className="border border-border px-2 py-1">Interpolation Target: Discount Factor</span>
-        <span className="border border-border px-2 py-1">Interpolation Method: Linear</span>
-        <span className="border border-border px-2 py-1">Step: 1M</span>
-        <span className="border border-border px-2 py-1">Anchor Nodes: {anchorCount}</span>
-        <span className="border border-border px-2 py-1">Interpolated Nodes: {interpolatedCount}</span>
+      <div className="mb-2 border border-border bg-card/55 p-3">
+        <div className="overflow-x-auto">
+          <div className="grid min-w-max gap-3" style={{ gridTemplateColumns: workspaceHeaderGridTemplateColumns }}>
+            <div className="space-y-1">
+              <div className="h-4 text-[10px] tracking-[0.18em] text-muted-foreground">{interpolationMethodHeading}</div>
+              <Select value={interpolationMethod} onValueChange={(value) => onInterpolationMethodChange(value as TreasuryInterpolationMethod)}>
+                <SelectTrigger className="w-full min-w-0 bg-background text-left text-foreground">
+                  <SelectValue placeholder="Select method" />
+                </SelectTrigger>
+                <SelectContent align="start" position="popper" className="border-border">
+                  {derivedInterpolationMethodOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <div className="h-4 text-[10px] tracking-[0.18em] text-muted-foreground">{interpolationStepHeading}</div>
+              <Select value={String(interpolationIntervalMonths)} onValueChange={(value) => onInterpolationIntervalMonthsChange(Number(value) as DerivedInterpolationStep)}>
+                <SelectTrigger className="w-full min-w-0 bg-background text-left text-foreground">
+                  <SelectValue placeholder="Select step" />
+                </SelectTrigger>
+                <SelectContent align="start" position="popper" className="border-border">
+                  {derivedInterpolationStepOptions.map((option) => (
+                    <SelectItem key={option.value} value={String(option.value)}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <div className="h-4" aria-hidden="true" />
+              <span className={workspaceBadgeClassName}>
+                {interpolationTargetLabel}
+              </span>
+            </div>
+
+            <div className="space-y-1">
+              <div className="h-4" aria-hidden="true" />
+              <span className={workspaceBadgeClassName}>
+                Anchor Nodes: {anchorCount}
+              </span>
+            </div>
+
+            <div className="space-y-1">
+              <div className="h-4" aria-hidden="true" />
+              <span className={workspaceBadgeClassName}>
+                Interpolated Nodes: {interpolatedCount}
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="grid gap-2 lg:grid-cols-[420px_minmax(0,1fr)]">
@@ -604,8 +728,54 @@ function DerivedLayerWorkspace({ instruments }: { instruments: BootstrapInstrume
         </div>
 
         <div className="h-[560px] border border-border bg-background/65 p-3">
-          <DerivedLayerChart nodes={derivedNodes} />
+          <DerivedLayerChart
+            nodes={derivedNodes}
+            ariaLabel="Derived layer discount factor by year fraction chart"
+          />
         </div>
+      </div>
+    </div>
+  )
+}
+
+function DatasetLayerWorkspace({
+  instruments,
+  selectedCurveStatus,
+  latestQuoteDate,
+  marketQuoteCount,
+  benchmarkQuoteCount,
+}: {
+  instruments: BootstrapInstrument[]
+  selectedCurveStatus: string
+  latestQuoteDate: string | null
+  marketQuoteCount: number
+  benchmarkQuoteCount: number
+}) {
+  return (
+    <div className="border border-border bg-background/80 p-2">
+      <div className="mb-2 border border-border bg-card/55 p-3">
+        <div className="flex flex-wrap items-center gap-3 pt-5">
+          <span className={workspaceBadgeClassName}>Status: {selectedCurveStatus}</span>
+          <span className={workspaceBadgeClassName}>Dataset: UST</span>
+          <span className={workspaceBadgeClassName}>Quote Date: {formatText(latestQuoteDate)}</span>
+          <span className={workspaceBadgeClassName}>Settlement: T+1</span>
+          <span className={workspaceBadgeClassName}>Bills: {marketQuoteCount}</span>
+          <span className={workspaceBadgeClassName}>Coupon Nodes: {benchmarkQuoteCount}</span>
+          <span className={workspaceBadgeClassName}>Total Bonds: {benchmarkQuoteCount + marketQuoteCount}</span>
+        </div>
+      </div>
+
+      <div className="ag-theme-quartz-dark curve-grid h-[560px] w-full">
+        <AgGridReact
+          rowData={instruments}
+          columnDefs={columnDefs}
+          defaultColDef={defaultColDef}
+          autoSizeStrategy={{ type: 'fitCellContents' }}
+          animateRows
+          onFirstDataRendered={(event) => event.api.autoSizeAllColumns()}
+          theme="legacy"
+          getRowId={(params) => params.data.id}
+        />
       </div>
     </div>
   )
@@ -613,6 +783,8 @@ function DerivedLayerWorkspace({ instruments }: { instruments: BootstrapInstrume
 
 function ActiveCurveGrid() {
   const [activeTab, setActiveTab] = useState<CurveWorkspaceTabKey>('dataset')
+  const [interpolationIntervalMonths, setInterpolationIntervalMonths] = useState<DerivedInterpolationStep>(1)
+  const [interpolationMethod, setInterpolationMethod] = useState<TreasuryInterpolationMethod>('linear_discount_factor')
   const selectedCurveData = useAppSelector(selectSelectedCurveData)
   const bootstrapInstruments = useAppSelector(selectSelectedCurveLatestBootstrapInstruments)
   const latestQuoteDate = useAppSelector(selectSelectedCurveLatestQuoteDate)
@@ -649,16 +821,6 @@ function ActiveCurveGrid() {
       <div className="-mt-px border border-primary/30 bg-card/95 p-4 shadow-[0_18px_50px_-34px_rgba(243,144,0,0.55)] md:p-5">
         {activeTab === 'dataset' ? (
           <>
-            <div className="mb-4 flex flex-wrap items-center gap-2 text-[11px] tracking-wide text-muted-foreground">
-              <span className="border border-border px-2 py-1">Status: {selectedCurveData?.status ?? 'idle'}</span>
-              <span className="border border-border px-2 py-1">Quote Date: {formatText(latestQuoteDate)}</span>
-              <span className="border border-border px-2 py-1">Settlement: T+1</span>
-              <span className="border border-border px-2 py-1">Universe: On-the-run / benchmark</span>
-              <span className="border border-border px-2 py-1">Rows: {bootstrapInstruments.length}</span>
-              <span className="border border-border px-2 py-1">Bills: {marketQuoteCount}</span>
-              <span className="border border-border px-2 py-1">Coupon Nodes: {benchmarkQuoteCount}</span>
-            </div>
-
             {selectedCurveData?.status === 'failed' ? (
               <div className="border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive-foreground">
                 {selectedCurveData.error ?? 'Unable to load curve data.'}
@@ -678,20 +840,13 @@ function ActiveCurveGrid() {
             ) : null}
 
             {bootstrapInstruments.length > 0 ? (
-              <div className="border border-border bg-background/80 p-2">
-                <div className="ag-theme-quartz-dark curve-grid h-[560px] w-full">
-                  <AgGridReact
-                    rowData={bootstrapInstruments}
-                    columnDefs={columnDefs}
-                    defaultColDef={defaultColDef}
-                    autoSizeStrategy={{ type: 'fitCellContents' }}
-                    animateRows
-                    onFirstDataRendered={(event) => event.api.autoSizeAllColumns()}
-                    theme="legacy"
-                    getRowId={(params) => params.data.id}
-                  />
-                </div>
-              </div>
+              <DatasetLayerWorkspace
+                instruments={bootstrapInstruments}
+                selectedCurveStatus={selectedCurveData?.status ?? 'idle'}
+                latestQuoteDate={latestQuoteDate}
+                marketQuoteCount={marketQuoteCount}
+                benchmarkQuoteCount={benchmarkQuoteCount}
+              />
             ) : null}
           </>
         ) : null}
@@ -716,7 +871,15 @@ function ActiveCurveGrid() {
               </div>
             ) : null}
 
-            {bootstrapInstruments.length > 0 ? <DerivedLayerWorkspace instruments={bootstrapInstruments} /> : null}
+            {bootstrapInstruments.length > 0 ? (
+              <DerivedLayerWorkspace
+                instruments={bootstrapInstruments}
+                interpolationIntervalMonths={interpolationIntervalMonths}
+                interpolationMethod={interpolationMethod}
+                onInterpolationIntervalMonthsChange={setInterpolationIntervalMonths}
+                onInterpolationMethodChange={setInterpolationMethod}
+              />
+            ) : null}
           </>
         ) : null}
 

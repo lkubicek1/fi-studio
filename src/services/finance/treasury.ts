@@ -1,5 +1,6 @@
 export type TreasuryDayCount = 'ACT/ACT' | 'ACT/360'
 export type TreasuryBillQuoteType = 'bill_discount_rate' | 'bill_investment_yield'
+export type TreasuryInterpolationMethod = 'linear_discount_factor' | 'log_linear_discount_factor'
 
 export type TreasuryCouponSchedule = {
   paymentDates: string[]
@@ -50,6 +51,11 @@ export type TreasuryDerivedCurveNode = {
 }
 
 type DiscountFactorAnchor = TreasuryDerivedCurveNode
+
+type TreasuryCouponCashFlow = {
+  yearFraction: number
+  cashFlow: number
+}
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000
 const CURVE_COORDINATE_EPSILON = 1e-8
@@ -113,6 +119,10 @@ function compareByCurveCoordinate(left: { yearFraction: number }, right: { yearF
   return left.yearFraction - right.yearFraction
 }
 
+function formatInterpolationMethodLabel(method: TreasuryInterpolationMethod) {
+  return method === 'log_linear_discount_factor' ? 'Log-Linear DF' : 'Linear DF'
+}
+
 function findBracketingAnchors(yearFraction: number, anchors: DiscountFactorAnchor[]) {
   let leftAnchor: DiscountFactorAnchor | null = null
   let rightAnchor: DiscountFactorAnchor | null = null
@@ -137,20 +147,43 @@ function findBracketingAnchors(yearFraction: number, anchors: DiscountFactorAnch
   return { leftAnchor, rightAnchor }
 }
 
-function interpolateDiscountFactor(yearFraction: number, anchors: DiscountFactorAnchor[]) {
-  const { leftAnchor, rightAnchor } = findBracketingAnchors(yearFraction, anchors)
-
-  if (!leftAnchor || !rightAnchor) {
-    return null
-  }
-
+function interpolateDiscountFactorBetweenAnchors(
+  yearFraction: number,
+  leftAnchor: DiscountFactorAnchor,
+  rightAnchor: DiscountFactorAnchor,
+  interpolationMethod: TreasuryInterpolationMethod,
+) {
   if (isSameCurveCoordinate(leftAnchor.yearFraction, rightAnchor.yearFraction)) {
     return leftAnchor.discountFactor
   }
 
   const weight = (yearFraction - leftAnchor.yearFraction) / (rightAnchor.yearFraction - leftAnchor.yearFraction)
 
+  if (interpolationMethod === 'log_linear_discount_factor') {
+    if (leftAnchor.discountFactor <= 0 || rightAnchor.discountFactor <= 0) {
+      return null
+    }
+
+    return Math.exp(
+      Math.log(leftAnchor.discountFactor) + (Math.log(rightAnchor.discountFactor) - Math.log(leftAnchor.discountFactor)) * weight,
+    )
+  }
+
   return leftAnchor.discountFactor + (rightAnchor.discountFactor - leftAnchor.discountFactor) * weight
+}
+
+function interpolateDiscountFactor(
+  yearFraction: number,
+  anchors: DiscountFactorAnchor[],
+  interpolationMethod: TreasuryInterpolationMethod,
+) {
+  const { leftAnchor, rightAnchor } = findBracketingAnchors(yearFraction, anchors)
+
+  if (!leftAnchor || !rightAnchor) {
+    return null
+  }
+
+  return interpolateDiscountFactorBetweenAnchors(yearFraction, leftAnchor, rightAnchor, interpolationMethod)
 }
 
 function createBillAnchorNode(instrument: TreasuryDiscountCurveInstrument) {
@@ -171,7 +204,149 @@ function createBillAnchorNode(instrument: TreasuryDiscountCurveInstrument) {
   }
 }
 
-function createCouponAnchorNode(instrument: TreasuryDiscountCurveInstrument, anchors: DiscountFactorAnchor[]) {
+function buildCouponCashFlows(
+  settlementDateText: string,
+  schedule: TreasuryCouponSchedule,
+  couponRate: number,
+  couponFrequencyPerYear: number,
+): TreasuryCouponCashFlow[] {
+  const couponCashFlow = couponRate / couponFrequencyPerYear
+  const finalPaymentDate = schedule.paymentDates[schedule.paymentDates.length - 1]
+
+  return schedule.paymentDates.map((paymentDate) => ({
+    yearFraction: normalizeCurveCoordinate(calculateActualActualYearFraction(settlementDateText, paymentDate)),
+    cashFlow: paymentDate === finalPaymentDate ? 100 + couponCashFlow : couponCashFlow,
+  }))
+}
+
+function createCandidateAnchor(
+  instrument: TreasuryDiscountCurveInstrument,
+  maturityYearFraction: number,
+  discountFactor: number,
+): DiscountFactorAnchor {
+  return {
+    id: `${instrument.id}:candidate`,
+    nodeType: 'anchor',
+    tenorLabel: instrument.tenor.label,
+    instrumentLabel: instrument.label,
+    yearFraction: normalizeCurveCoordinate(maturityYearFraction),
+    cleanPrice: instrument.cleanPrice,
+    discountFactor: normalizeCurveCoordinate(discountFactor),
+    sourceLabel: instrument.label,
+    methodLabel: 'Candidate solve',
+  }
+}
+
+function priceCouponCashFlowsFromCurve(
+  cashFlows: TreasuryCouponCashFlow[],
+  anchors: DiscountFactorAnchor[],
+  candidateAnchor: DiscountFactorAnchor,
+  interpolationMethod: TreasuryInterpolationMethod,
+) {
+  const pricingAnchors = [...anchors, candidateAnchor].sort(compareByCurveCoordinate)
+  let dirtyPrice = 0
+
+  for (const cashFlow of cashFlows) {
+    const discountFactor = interpolateDiscountFactor(cashFlow.yearFraction, pricingAnchors, interpolationMethod)
+
+    if (discountFactor === null) {
+      return null
+    }
+
+    dirtyPrice += cashFlow.cashFlow * discountFactor
+  }
+
+  return dirtyPrice
+}
+
+function solveCouponAnchorDiscountFactor(
+  instrument: TreasuryDiscountCurveInstrument,
+  maturityYearFraction: number,
+  cashFlows: TreasuryCouponCashFlow[],
+  anchors: DiscountFactorAnchor[],
+  interpolationMethod: TreasuryInterpolationMethod,
+) {
+  if (instrument.dirtyPrice === null || instrument.dirtyPrice <= 0) {
+    return null
+  }
+
+  const previousAnchor = [...anchors].sort(compareByCurveCoordinate).at(-1)
+
+  if (!previousAnchor || previousAnchor.yearFraction >= maturityYearFraction) {
+    return null
+  }
+
+  const lowerBound = 0.000001
+  let upperBound = Math.max(previousAnchor.discountFactor, 1)
+  let upperBoundPrice = priceCouponCashFlowsFromCurve(
+    cashFlows,
+    anchors,
+    createCandidateAnchor(instrument, maturityYearFraction, upperBound),
+    interpolationMethod,
+  )
+  let expansionCount = 0
+
+  while (upperBoundPrice !== null && upperBoundPrice < instrument.dirtyPrice && expansionCount < 12) {
+    upperBound *= 2
+    upperBoundPrice = priceCouponCashFlowsFromCurve(
+      cashFlows,
+      anchors,
+      createCandidateAnchor(instrument, maturityYearFraction, upperBound),
+      interpolationMethod,
+    )
+    expansionCount += 1
+  }
+
+  const lowerBoundPrice = priceCouponCashFlowsFromCurve(
+    cashFlows,
+    anchors,
+    createCandidateAnchor(instrument, maturityYearFraction, lowerBound),
+    interpolationMethod,
+  )
+
+  if (lowerBoundPrice === null || upperBoundPrice === null) {
+    return null
+  }
+
+  if (lowerBoundPrice > instrument.dirtyPrice || upperBoundPrice < instrument.dirtyPrice) {
+    return null
+  }
+
+  let low = lowerBound
+  let high = upperBound
+
+  for (let iteration = 0; iteration < 80; iteration += 1) {
+    const midpoint = (low + high) / 2
+    const midpointPrice = priceCouponCashFlowsFromCurve(
+      cashFlows,
+      anchors,
+      createCandidateAnchor(instrument, maturityYearFraction, midpoint),
+      interpolationMethod,
+    )
+
+    if (midpointPrice === null) {
+      return null
+    }
+
+    if (Math.abs(midpointPrice - instrument.dirtyPrice) <= 1e-9) {
+      return midpoint
+    }
+
+    if (midpointPrice < instrument.dirtyPrice) {
+      low = midpoint
+    } else {
+      high = midpoint
+    }
+  }
+
+  return (low + high) / 2
+}
+
+function createCouponAnchorNode(
+  instrument: TreasuryDiscountCurveInstrument,
+  anchors: DiscountFactorAnchor[],
+  interpolationMethod: TreasuryInterpolationMethod,
+) {
   if (
     instrument.dirtyPrice === null ||
     instrument.dirtyPrice <= 0 ||
@@ -201,46 +376,21 @@ function createCouponAnchorNode(instrument: TreasuryDiscountCurveInstrument, anc
     return null
   }
 
-  const couponCashFlow = instrument.couponRate / instrument.couponFrequencyPerYear
-  const finalPaymentDate = schedule.paymentDates[schedule.paymentDates.length - 1]
-  let knownContribution = 0
-  let unknownCoefficient = 0
+  const cashFlows = buildCouponCashFlows(
+    instrument.settlementDate,
+    schedule,
+    instrument.couponRate,
+    instrument.couponFrequencyPerYear,
+  )
+  const discountFactor = solveCouponAnchorDiscountFactor(
+    instrument,
+    maturityYearFraction,
+    cashFlows,
+    anchors,
+    interpolationMethod,
+  )
 
-  for (const paymentDate of schedule.paymentDates) {
-    const paymentYearFraction = calculateActualActualYearFraction(instrument.settlementDate, paymentDate)
-    const normalizedPaymentYearFraction = normalizeCurveCoordinate(paymentYearFraction)
-    const cashFlow = paymentDate === finalPaymentDate ? 100 + couponCashFlow : couponCashFlow
-
-    if (isSameCurveCoordinate(normalizedPaymentYearFraction, maturityYearFraction)) {
-      unknownCoefficient += cashFlow
-      continue
-    }
-
-    if (normalizedPaymentYearFraction <= previousAnchor.yearFraction || isSameCurveCoordinate(normalizedPaymentYearFraction, previousAnchor.yearFraction)) {
-      const interpolatedDiscountFactor = interpolateDiscountFactor(normalizedPaymentYearFraction, anchors)
-
-      if (interpolatedDiscountFactor === null) {
-        return null
-      }
-
-      knownContribution += cashFlow * interpolatedDiscountFactor
-      continue
-    }
-
-    const intervalWeight =
-      (normalizedPaymentYearFraction - previousAnchor.yearFraction) / (maturityYearFraction - previousAnchor.yearFraction)
-
-    knownContribution += cashFlow * previousAnchor.discountFactor * (1 - intervalWeight)
-    unknownCoefficient += cashFlow * intervalWeight
-  }
-
-  if (unknownCoefficient <= 0) {
-    return null
-  }
-
-  const discountFactor = (instrument.dirtyPrice - knownContribution) / unknownCoefficient
-
-  if (!Number.isFinite(discountFactor) || discountFactor <= 0) {
+  if (discountFactor === null || !Number.isFinite(discountFactor) || discountFactor <= 0) {
     return null
   }
 
@@ -253,11 +403,14 @@ function createCouponAnchorNode(instrument: TreasuryDiscountCurveInstrument, anc
     cleanPrice: instrument.cleanPrice,
     discountFactor: normalizeCurveCoordinate(discountFactor),
     sourceLabel: instrument.label,
-    methodLabel: 'Coupon bootstrap solve',
+    methodLabel: `Coupon bootstrap solve (${formatInterpolationMethodLabel(interpolationMethod)})`,
   }
 }
 
-function bootstrapDiscountFactorAnchors(instruments: TreasuryDiscountCurveInstrument[]) {
+function bootstrapDiscountFactorAnchors(
+  instruments: TreasuryDiscountCurveInstrument[],
+  interpolationMethod: TreasuryInterpolationMethod,
+) {
   const sortedInstruments = [...instruments]
     .filter((instrument) => instrument.yearFractionToMaturity !== null && instrument.yearFractionToMaturity > 0)
     .sort((left, right) => (left.yearFractionToMaturity ?? Number.MAX_SAFE_INTEGER) - (right.yearFractionToMaturity ?? Number.MAX_SAFE_INTEGER))
@@ -266,7 +419,9 @@ function bootstrapDiscountFactorAnchors(instruments: TreasuryDiscountCurveInstru
 
   for (const instrument of sortedInstruments) {
     const nextAnchor =
-      instrument.instrumentType === 'bill' ? createBillAnchorNode(instrument) : createCouponAnchorNode(instrument, anchors)
+      instrument.instrumentType === 'bill'
+        ? createBillAnchorNode(instrument)
+        : createCouponAnchorNode(instrument, anchors, interpolationMethod)
 
     if (!nextAnchor) {
       continue
@@ -279,7 +434,11 @@ function bootstrapDiscountFactorAnchors(instruments: TreasuryDiscountCurveInstru
   return anchors
 }
 
-function createInterpolatedDisplayNodes(anchors: DiscountFactorAnchor[], intervalMonths: number) {
+function createInterpolatedDisplayNodes(
+  anchors: DiscountFactorAnchor[],
+  intervalMonths: number,
+  interpolationMethod: TreasuryInterpolationMethod,
+) {
   if (anchors.length < 2 || intervalMonths <= 0) {
     return []
   }
@@ -302,7 +461,7 @@ function createInterpolatedDisplayNodes(anchors: DiscountFactorAnchor[], interva
       continue
     }
 
-    const discountFactor = interpolateDiscountFactor(yearFraction, sortedAnchors)
+    const discountFactor = interpolateDiscountFactor(yearFraction, sortedAnchors, interpolationMethod)
     const { leftAnchor, rightAnchor } = findBracketingAnchors(yearFraction, sortedAnchors)
 
     if (discountFactor === null || !leftAnchor || !rightAnchor) {
@@ -318,7 +477,7 @@ function createInterpolatedDisplayNodes(anchors: DiscountFactorAnchor[], interva
       cleanPrice: null,
       discountFactor: normalizeCurveCoordinate(discountFactor),
       sourceLabel: `${leftAnchor.tenorLabel} -> ${rightAnchor.tenorLabel}`,
-      methodLabel: 'Linear DF interpolation',
+      methodLabel: `${formatInterpolationMethodLabel(interpolationMethod)} interpolation`,
     })
   }
 
@@ -529,11 +688,12 @@ export function deriveBillYieldToMaturityFromPrice(cleanPrice: number | null, da
 
 export function buildTreasuryDerivedCurveNodes(
   instruments: TreasuryDiscountCurveInstrument[],
-  options?: { interpolationIntervalMonths?: number },
+  options?: { interpolationIntervalMonths?: number; interpolationMethod?: TreasuryInterpolationMethod },
 ) {
-  const anchors = bootstrapDiscountFactorAnchors(instruments)
+  const interpolationMethod = options?.interpolationMethod ?? 'linear_discount_factor'
+  const anchors = bootstrapDiscountFactorAnchors(instruments, interpolationMethod)
   const interpolationIntervalMonths = options?.interpolationIntervalMonths ?? 1
-  const interpolatedNodes = createInterpolatedDisplayNodes(anchors, interpolationIntervalMonths)
+  const interpolatedNodes = createInterpolatedDisplayNodes(anchors, interpolationIntervalMonths, interpolationMethod)
 
   return [...anchors, ...interpolatedNodes].sort((left, right) => {
     const yearFractionDifference = left.yearFraction - right.yearFraction
