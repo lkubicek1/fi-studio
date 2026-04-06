@@ -39,6 +39,8 @@ export type BootstrapInstrument = {
   dayCount: 'ACT/ACT' | 'ACT/360' | null
   compounding: BootstrapCompounding | null
   cleanPrice: number | null
+  currentYield: number | null
+  yieldToMaturity: number | null
   dirtyPrice: number | null
   accruedInterest: number | null
   discountRate: number | null
@@ -655,6 +657,22 @@ function deriveBillPrice(
   return null
 }
 
+function deriveCurrentYield(couponRate: number | null, cleanPrice: number | null) {
+  if (couponRate === null || cleanPrice === null || cleanPrice <= 0) {
+    return null
+  }
+
+  return (couponRate / cleanPrice) * 100
+}
+
+function deriveBillYieldToMaturityFromPrice(cleanPrice: number | null, daysToMaturity: number | null) {
+  if (cleanPrice === null || daysToMaturity === null || daysToMaturity <= 0 || cleanPrice <= 0) {
+    return null
+  }
+
+  return ((100 / cleanPrice) - 1) * (365 / daysToMaturity) * 100
+}
+
 function createBootstrapInstrumentId(...parts: Array<string | number | null>) {
   return parts.filter((part) => part !== null && part !== '').join(':')
 }
@@ -715,8 +733,8 @@ function createTreasuryBillBootstrapInstruments(
 
     const pricingNotes =
       quoteData.quoteType === 'bill_discount_rate'
-        ? 'Actual bill close quote converted to price using the Treasury ACT/360 discount basis.'
-        : 'Actual bill investment yield converted to price using a simple ACT/365 money-market basis.'
+        ? 'Current benchmark Treasury bill close quote converted to price using the Treasury ACT/360 discount basis.'
+        : 'Current benchmark Treasury bill investment yield converted to price using a simple ACT/365 money-market basis.'
 
     instruments.push({
       id: createBootstrapInstrumentId(treasuryBillRatesSource.key, quoteDate, tenorSegment),
@@ -738,6 +756,8 @@ function createTreasuryBillBootstrapInstruments(
       dayCount: 'ACT/360',
       compounding: 'simple',
       cleanPrice: quoteData.cleanPrice,
+      currentYield: null,
+      yieldToMaturity: deriveBillYieldToMaturityFromPrice(quoteData.cleanPrice, daysToMaturity),
       dirtyPrice: quoteData.cleanPrice,
       accruedInterest: 0,
       discountRate,
@@ -859,6 +879,8 @@ function createTreasuryCouponBenchmarkInstruments(
       dayCount: 'ACT/ACT',
       compounding: 'semiannual',
       cleanPrice: pricing.cleanPrice,
+      currentYield: deriveCurrentYield(auction.couponRate, pricing.cleanPrice),
+      yieldToMaturity: parPoint.value,
       dirtyPrice: pricing.dirtyPrice,
       accruedInterest: pricing.accruedInterest,
       discountRate: null,
@@ -874,7 +896,7 @@ function createTreasuryCouponBenchmarkInstruments(
       sourceField: parPoint.sourceField,
       sourceLabel: `${treasuryParYieldSource.title} + ${treasuryAuctionSource.title}`,
       pricingNotes:
-        'Current clean price is derived from the official Treasury benchmark par yield using the active fixed-coupon issue cash-flow schedule.',
+        'Current clean price is derived from the official Treasury benchmark par yield using the active on-the-run fixed-coupon issue cash-flow schedule.',
     })
   }
 

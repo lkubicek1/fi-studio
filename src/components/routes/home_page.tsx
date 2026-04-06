@@ -15,8 +15,9 @@ function HomePage() {
               </div>
             </div>
             <p className="max-w-xl text-sm leading-5 text-muted-foreground">
-              Public Treasury bootstrap inputs assembled in-browser from official sources. Bills carry market quotes;
-              coupon bond rows use active issue metadata with benchmark-derived prices.
+              Public Treasury bootstrap inputs assembled in-browser from official sources. Bill rows use current
+              benchmark bill quotes; coupon bond rows use active on-the-run issue metadata with benchmark-derived
+              prices.
             </p>
           </div>
 

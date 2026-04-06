@@ -135,6 +135,24 @@ const columnDefs: ColDef<BootstrapInstrument>[] = [
     minWidth: 86,
     },
   {
+    field: 'currentYield',
+    headerName: 'Current Yld',
+    valueFormatter: formatRateValue,
+    headerClass: 'bootstrap-focus-header',
+    cellClass: 'bootstrap-focus-cell',
+    width: 98,
+    minWidth: 90,
+    },
+  {
+    field: 'yieldToMaturity',
+    headerName: 'YTM',
+    valueFormatter: formatRateValue,
+    headerClass: 'bootstrap-focus-header',
+    cellClass: 'bootstrap-focus-cell',
+    width: 84,
+    minWidth: 78,
+    },
+  {
     field: 'dayCount',
     headerName: 'Day Ct',
     valueFormatter: formatTextValue,
@@ -301,6 +319,7 @@ function ActiveCurveGrid() {
         <span className="border border-border px-2 py-1">Status: {selectedCurveData?.status ?? 'idle'}</span>
         <span className="border border-border px-2 py-1">Quote Date: {formatText(latestQuoteDate)}</span>
         <span className="border border-border px-2 py-1">Settlement: {formatText(settlementDate)}</span>
+        <span className="border border-border px-2 py-1">Universe: On-the-run / benchmark</span>
         <span className="border border-border px-2 py-1">Rows: {bootstrapInstruments.length}</span>
         <span className="border border-border px-2 py-1">Bills: {marketQuoteCount}</span>
         <span className="border border-border px-2 py-1">Coupon Nodes: {benchmarkQuoteCount}</span>
