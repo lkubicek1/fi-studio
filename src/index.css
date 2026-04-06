@@ -241,3 +241,25 @@
 .curve-grid.ag-theme-quartz-dark .ag-paging-panel {
   color: var(--card-foreground) !important;
 }
+
+.curve-grid.ag-theme-quartz-dark .ag-row.derived-anchor-row {
+  background-color: rgb(243 144 0 / 0.04) !important;
+}
+
+.curve-grid.ag-theme-quartz-dark .ag-row.derived-interpolated-row {
+  background-color: rgb(255 255 255 / 0.012) !important;
+}
+
+.curve-grid.ag-theme-quartz-dark .ag-cell.derived-kind-cell {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.curve-grid.ag-theme-quartz-dark .ag-cell.derived-kind-anchor {
+  color: var(--primary) !important;
+}
+
+.curve-grid.ag-theme-quartz-dark .ag-cell.derived-kind-interpolated {
+  color: var(--muted-foreground) !important;
+}

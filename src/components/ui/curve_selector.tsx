@@ -31,8 +31,8 @@ function CurveSourceSummary() {
 
   return (
     <div className="space-y-2">
-      <div className="space-y-1">
-        <div className="text-[10px] tracking-[0.18em] text-muted-foreground">PUBLIC DATASET</div>
+      <div className="flex flex-row items-center gap-4">
+        <div className="text-[10px] tracking-[0.18em] text-muted-foreground">PUBLIC DATASET:</div>
         <div className="text-sm text-foreground">{activeCurve?.title ?? 'No active dataset'}</div>
       </div>
 

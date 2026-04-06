@@ -11,6 +11,7 @@ import {
   selectSelectedCurveLatestQuoteDate,
 } from '@/app/curveSelectionSlice'
 import { cn } from '@/lib/utils'
+import { buildTreasuryDerivedCurveNodes, type TreasuryDerivedCurveNode } from '@/services/finance/treasury.ts'
 
 function formatRate(value: number | null) {
   return typeof value === 'number' ? `${value.toFixed(2)}%` : '—'
@@ -21,6 +22,10 @@ function formatPrice(value: number | null) {
 }
 
 function formatYearFraction(value: number | null) {
+  return typeof value === 'number' ? value.toFixed(6) : '—'
+}
+
+function formatDiscountFactor(value: number | null) {
   return typeof value === 'number' ? value.toFixed(6) : '—'
 }
 
@@ -79,6 +84,14 @@ const defaultColDef: ColDef<BootstrapInstrument> = {
   filter: true,
   resizable: true,
   minWidth: 120,
+  suppressHeaderMenuButton: true,
+}
+
+const derivedGridColDef: ColDef<TreasuryDerivedCurveNode> = {
+  sortable: false,
+  filter: false,
+  resizable: true,
+  minWidth: 88,
   suppressHeaderMenuButton: true,
 }
 
@@ -321,6 +334,62 @@ const columnDefs: ColDef<BootstrapInstrument>[] = [
   },
 ]
 
+const derivedColumnDefs: ColDef<TreasuryDerivedCurveNode>[] = [
+  {
+    field: 'nodeType',
+    headerName: 'Kind',
+    valueFormatter: (params) => (params.value === 'anchor' ? 'Anchor' : params.value === 'interpolated' ? 'Interpolated' : '—'),
+    cellClass: (params) =>
+      cn(
+        'derived-kind-cell',
+        params.value === 'anchor' ? 'derived-kind-anchor' : undefined,
+        params.value === 'interpolated' ? 'derived-kind-interpolated' : undefined,
+      ),
+    width: 110,
+    minWidth: 102,
+    maxWidth: 120,
+  },
+  {
+    field: 'tenorLabel',
+    headerName: 'Tenor',
+    flex: 0.7,
+    minWidth: 76,
+    maxWidth: 92,
+  },
+  {
+    field: 'instrumentLabel',
+    headerName: 'Instrument',
+    valueFormatter: (params) => formatText(typeof params.value === 'string' ? params.value : null),
+    flex: 1.7,
+    minWidth: 150,
+  },
+  {
+    field: 'yearFraction',
+    headerName: 'YearFrac',
+    valueFormatter: (params) => formatYearFraction(typeof params.value === 'number' ? params.value : null),
+    headerClass: 'bootstrap-focus-header',
+    cellClass: 'bootstrap-focus-cell',
+    flex: 1,
+    minWidth: 96,
+  },
+  {
+    field: 'cleanPrice',
+    headerName: 'Clean Px',
+    valueFormatter: (params) => formatPrice(typeof params.value === 'number' ? params.value : null),
+    flex: 0.9,
+    minWidth: 92,
+  },
+  {
+    field: 'discountFactor',
+    headerName: 'DF',
+    valueFormatter: (params) => formatDiscountFactor(typeof params.value === 'number' ? params.value : null),
+    headerClass: 'bootstrap-focus-header',
+    cellClass: 'bootstrap-focus-cell',
+    flex: 0.9,
+    minWidth: 98,
+  },
+]
+
 type CurveWorkspaceTabKey = 'dataset' | 'derived' | 'spot' | 'chart'
 
 type CurveWorkspaceTab = {
@@ -377,6 +446,168 @@ function PlaceholderPanel({ badges, eyebrow, title, description, viewportLabel, 
         </div>
       </div>
     </>
+  )
+}
+
+function formatAxisNumber(value: number) {
+  if (Math.abs(value) >= 10) {
+    return value.toFixed(1)
+  }
+
+  if (Math.abs(value) >= 1) {
+    return value.toFixed(2)
+  }
+
+  return value.toFixed(3)
+}
+
+function formatAxisDiscountFactor(value: number) {
+  return value.toFixed(4)
+}
+
+function createLinearTicks(min: number, max: number, count: number) {
+  if (count <= 1 || min === max) {
+    return [min]
+  }
+
+  const step = (max - min) / (count - 1)
+
+  return Array.from({ length: count }, (_, index) => min + step * index)
+}
+
+function DerivedLayerChart({ nodes }: { nodes: TreasuryDerivedCurveNode[] }) {
+  if (nodes.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        No discount-factor nodes are available for the derived-layer chart.
+      </div>
+    )
+  }
+
+  const chartPoints = [...nodes].sort((left, right) => left.yearFraction - right.yearFraction)
+
+  const width = 720
+  const height = 560
+  const padding = { top: 28, right: 24, bottom: 48, left: 68 }
+  const plotWidth = width - padding.left - padding.right
+  const plotHeight = height - padding.top - padding.bottom
+
+  const yearFractions = chartPoints.map((point) => point.yearFraction)
+  const discountFactors = chartPoints.map((point) => point.discountFactor)
+  const minYearFraction = Math.min(...yearFractions)
+  const maxYearFraction = Math.max(...yearFractions)
+  const minDiscountFactor = Math.min(...discountFactors)
+  const maxDiscountFactor = Math.max(...discountFactors)
+  const xPadding = maxYearFraction === minYearFraction ? 0.25 : (maxYearFraction - minYearFraction) * 0.04
+  const yPadding = maxDiscountFactor === minDiscountFactor ? 0.02 : (maxDiscountFactor - minDiscountFactor) * 0.08
+  const xDomainMin = Math.max(0, minYearFraction - xPadding)
+  const xDomainMax = maxYearFraction + xPadding
+  const yDomainMin = Math.max(0, minDiscountFactor - yPadding)
+  const yDomainMax = Math.min(1.05, maxDiscountFactor + yPadding)
+  const xTicks = createLinearTicks(xDomainMin, xDomainMax, 5)
+  const yTicks = createLinearTicks(yDomainMin, yDomainMax, 5)
+  const linePath = chartPoints.map((point) => `${scaleX(point.yearFraction)},${scaleY(point.discountFactor)}`).join(' ')
+
+  function scaleX(value: number) {
+    return padding.left + ((value - xDomainMin) / (xDomainMax - xDomainMin)) * plotWidth
+  }
+
+  function scaleY(value: number) {
+    return height - padding.bottom - ((value - yDomainMin) / (yDomainMax - yDomainMin)) * plotHeight
+  }
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full" preserveAspectRatio="none" role="img" aria-label="Derived layer discount factor by year fraction chart">
+      <rect x="0" y="0" width={width} height={height} fill="var(--background)" opacity="0.35" />
+
+      {yTicks.map((tick) => {
+        const y = scaleY(tick)
+
+        return (
+          <g key={`y-${tick}`}>
+            <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="var(--border)" strokeDasharray="4 6" opacity="0.9" />
+            <text x={padding.left - 12} y={y + 4} fill="var(--muted-foreground)" fontSize="10" textAnchor="end">
+              {formatAxisDiscountFactor(tick)}
+            </text>
+          </g>
+        )
+      })}
+
+      {xTicks.map((tick) => {
+        const x = scaleX(tick)
+
+        return (
+          <g key={`x-${tick}`}>
+            <line x1={x} y1={padding.top} x2={x} y2={height - padding.bottom} stroke="var(--border)" strokeDasharray="4 6" opacity="0.75" />
+            <text x={x} y={height - 18} fill="var(--muted-foreground)" fontSize="10" textAnchor="middle">
+              {formatAxisNumber(tick)}
+            </text>
+          </g>
+        )
+      })}
+
+      <line x1={padding.left} y1={height - padding.bottom} x2={width - padding.right} y2={height - padding.bottom} stroke="var(--muted-foreground)" opacity="0.9" />
+      <line x1={padding.left} y1={padding.top} x2={padding.left} y2={height - padding.bottom} stroke="var(--muted-foreground)" opacity="0.9" />
+
+      <polyline fill="none" points={linePath} stroke="var(--primary)" strokeOpacity="0.8" strokeWidth="2" />
+
+      {chartPoints.map((point) => (
+        <circle
+          key={point.id}
+          cx={scaleX(point.yearFraction)}
+          cy={scaleY(point.discountFactor)}
+          r={point.nodeType === 'anchor' ? 5 : 3.25}
+          fill={point.nodeType === 'anchor' ? 'var(--primary)' : 'var(--background)'}
+          stroke={point.nodeType === 'anchor' ? 'var(--background)' : 'var(--muted-foreground)'}
+          strokeWidth={point.nodeType === 'anchor' ? 1.5 : 1.3}
+        >
+          <title>{`${point.nodeType === 'anchor' ? 'Anchor' : 'Interpolated'} | ${point.tenorLabel} | ${point.instrumentLabel ?? 'Synthetic node'} | YearFrac ${formatYearFraction(point.yearFraction)} | DF ${formatDiscountFactor(point.discountFactor)} | ${point.methodLabel}`}</title>
+        </circle>
+      ))}
+
+      <text x={padding.left} y={16} fill="var(--muted-foreground)" fontSize="11" letterSpacing="0.18em">
+        DISCOUNT FACTOR
+      </text>
+      <text x={width - padding.right} y={height - 8} fill="var(--muted-foreground)" fontSize="11" letterSpacing="0.18em" textAnchor="end">
+        YEAR FRACTION TO MATURITY
+      </text>
+    </svg>
+  )
+}
+
+function DerivedLayerWorkspace({ instruments }: { instruments: BootstrapInstrument[] }) {
+  const derivedNodes = buildTreasuryDerivedCurveNodes(instruments, { interpolationIntervalMonths: 1 })
+  const anchorCount = derivedNodes.filter((node) => node.nodeType === 'anchor').length
+  const interpolatedCount = derivedNodes.length - anchorCount
+
+  return (
+    <div className="border border-border bg-background/80 p-2">
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] tracking-wide text-muted-foreground">
+        <span className="border border-border px-2 py-1">Interpolation Target: Discount Factor</span>
+        <span className="border border-border px-2 py-1">Interpolation Method: Linear</span>
+        <span className="border border-border px-2 py-1">Step: 1M</span>
+        <span className="border border-border px-2 py-1">Anchor Nodes: {anchorCount}</span>
+        <span className="border border-border px-2 py-1">Interpolated Nodes: {interpolatedCount}</span>
+      </div>
+
+      <div className="grid gap-2 lg:grid-cols-[420px_minmax(0,1fr)]">
+        <div className="ag-theme-quartz-dark curve-grid h-[560px] w-full">
+          <AgGridReact<TreasuryDerivedCurveNode>
+            rowData={derivedNodes}
+            columnDefs={derivedColumnDefs}
+            defaultColDef={derivedGridColDef}
+            animateRows
+            theme="legacy"
+            getRowClass={(params) => (params.data?.nodeType === 'anchor' ? 'derived-anchor-row' : 'derived-interpolated-row')}
+            getRowId={(params) => params.data.id}
+          />
+        </div>
+
+        <div className="h-[560px] border border-border bg-background/65 p-3">
+          <DerivedLayerChart nodes={derivedNodes} />
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -466,13 +697,27 @@ function ActiveCurveGrid() {
         ) : null}
 
         {activeTab === 'derived' ? (
-          <PlaceholderPanel
-            badges={['Controls: Placeholder', 'Tenor Interval: TBD', 'Interpolation: TBD', 'Derived Grid: Pending']}
-            eyebrow="DERIVED LAYER"
-            title="Interpolation workspace placeholder"
-            description="This tab will host the control shelf above a live AG Grid showing the dense intermediary tenor layer used for curve construction."
-            viewportLabel="Derived-tenor AG Grid placeholder"
-          />
+          <>
+            {selectedCurveData?.status === 'failed' ? (
+              <div className="border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive-foreground">
+                {selectedCurveData.error ?? 'Unable to load curve data.'}
+              </div>
+            ) : null}
+
+            {selectedCurveData?.status === 'loading' && bootstrapInstruments.length === 0 ? (
+              <div className="border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
+                Loading the public Treasury bootstrap dataset...
+              </div>
+            ) : null}
+
+            {selectedCurveData?.status === 'succeeded' && bootstrapInstruments.length === 0 ? (
+              <div className="border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
+                No bootstrap instruments were produced for this Treasury dataset.
+              </div>
+            ) : null}
+
+            {bootstrapInstruments.length > 0 ? <DerivedLayerWorkspace instruments={bootstrapInstruments} /> : null}
+          </>
         ) : null}
 
         {activeTab === 'spot' ? (

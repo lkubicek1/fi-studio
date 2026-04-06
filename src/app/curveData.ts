@@ -4,6 +4,16 @@ import {
   treasuryParYieldSource,
   type CurveSourceComponent,
 } from '@/services/api/curves.ts'
+import {
+  addBusinessDays,
+  buildTreasuryCouponSchedule,
+  calculateYearFraction,
+  deriveBillPrice,
+  deriveBillYieldToMaturityFromPrice,
+  deriveCurrentYield,
+  getDayDifference,
+  priceTreasuryCouponBond,
+} from '@/services/finance/treasury.ts'
 
 export type CurveTenor = {
   label: string
@@ -99,13 +109,6 @@ type TreasuryAuctionRecord = {
   reopening: boolean
 }
 
-type TreasuryCouponSchedule = {
-  paymentDates: string[]
-  previousCouponDate: string | null
-  nextCouponDate: string | null
-  remainingCouponCount: number | null
-}
-
 type TreasuryPublicCurveBodies = {
   billRatesBody: string
   parYieldBody: string
@@ -114,7 +117,6 @@ type TreasuryPublicCurveBodies = {
 
 const XML_METADATA_NAMESPACE = 'http://schemas.microsoft.com/ado/2007/08/dataservices/metadata'
 const observationDateCandidates = ['NEW_DATE', 'INDEX_DATE', 'QUOTE_DATE']
-const DAY_IN_MS = 24 * 60 * 60 * 1000
 
 const couponBenchmarkTerms = [
   { tenor: createYearsTenor(2), originalSecurityTerm: '2-Year' },
@@ -421,256 +423,6 @@ function getStringField(fields: Record<string, CurveFieldValue>, fieldName: stri
   const fieldValue = fields[fieldName]
 
   return typeof fieldValue === 'string' ? fieldValue : null
-}
-
-function parseIsoDate(value: string | null) {
-  if (!value) {
-    return null
-  }
-
-  const parsedDate = new Date(`${value}T00:00:00Z`)
-
-  return Number.isNaN(parsedDate.getTime()) ? null : parsedDate
-}
-
-function formatIsoDate(date: Date) {
-  return date.toISOString().slice(0, 10)
-}
-
-function addDays(date: Date, days: number) {
-  return new Date(date.getTime() + days * DAY_IN_MS)
-}
-
-function isBusinessDay(date: Date) {
-  const dayOfWeek = date.getUTCDay()
-
-  return dayOfWeek !== 0 && dayOfWeek !== 6
-}
-
-function addBusinessDays(dateText: string | null, businessDays: number) {
-  const startDate = parseIsoDate(dateText)
-
-  if (!startDate) {
-    return null
-  }
-
-  let currentDate = startDate
-  let remainingDays = businessDays
-
-  while (remainingDays > 0) {
-    currentDate = addDays(currentDate, 1)
-
-    if (isBusinessDay(currentDate)) {
-      remainingDays -= 1
-    }
-  }
-
-  return formatIsoDate(currentDate)
-}
-
-function getDayDifference(startDateText: string | null, endDateText: string | null) {
-  const startDate = parseIsoDate(startDateText)
-  const endDate = parseIsoDate(endDateText)
-
-  if (!startDate || !endDate) {
-    return null
-  }
-
-  return Math.max(0, Math.round((endDate.getTime() - startDate.getTime()) / DAY_IN_MS))
-}
-
-function getDaysInYear(year: number) {
-  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 366 : 365
-}
-
-function calculateActualActualYearFraction(startDateText: string | null, endDateText: string | null) {
-  const startDate = parseIsoDate(startDateText)
-  const endDate = parseIsoDate(endDateText)
-
-  if (!startDate || !endDate || endDate <= startDate) {
-    return 0
-  }
-
-  let total = 0
-  let currentDate = startDate
-
-  while (currentDate < endDate) {
-    const yearEnd = new Date(Date.UTC(currentDate.getUTCFullYear() + 1, 0, 1))
-    const segmentEnd = yearEnd < endDate ? yearEnd : endDate
-    const segmentDays = Math.round((segmentEnd.getTime() - currentDate.getTime()) / DAY_IN_MS)
-
-    total += segmentDays / getDaysInYear(currentDate.getUTCFullYear())
-    currentDate = segmentEnd
-  }
-
-  return total
-}
-
-function calculateYearFraction(
-  startDateText: string | null,
-  endDateText: string | null,
-  dayCount: BootstrapInstrument['dayCount'],
-) {
-  const actualDays = getDayDifference(startDateText, endDateText)
-
-  if (actualDays === null) {
-    return null
-  }
-
-  switch (dayCount) {
-    case 'ACT/360':
-      return actualDays / 360
-    case 'ACT/ACT':
-      return calculateActualActualYearFraction(startDateText, endDateText)
-    default:
-      return null
-  }
-}
-
-function getDaysInMonth(year: number, monthIndex: number) {
-  return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate()
-}
-
-function addMonthsClamped(date: Date, months: number) {
-  const currentDay = date.getUTCDate()
-  const provisionalDate = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1))
-  const clampedDay = Math.min(
-    currentDay,
-    getDaysInMonth(provisionalDate.getUTCFullYear(), provisionalDate.getUTCMonth()),
-  )
-
-  return new Date(Date.UTC(provisionalDate.getUTCFullYear(), provisionalDate.getUTCMonth(), clampedDay))
-}
-
-function buildTreasuryCouponSchedule(settlementDateText: string | null, maturityDateText: string | null): TreasuryCouponSchedule {
-  const settlementDate = parseIsoDate(settlementDateText)
-  const maturityDate = parseIsoDate(maturityDateText)
-
-  if (!settlementDate || !maturityDate || maturityDate <= settlementDate) {
-    return {
-      paymentDates: [],
-      previousCouponDate: null,
-      nextCouponDate: null,
-      remainingCouponCount: null,
-    }
-  }
-
-  const paymentDates: Date[] = []
-  let currentCouponDate = maturityDate
-
-  while (currentCouponDate > settlementDate) {
-    paymentDates.push(currentCouponDate)
-    currentCouponDate = addMonthsClamped(currentCouponDate, -6)
-  }
-
-  const orderedPaymentDates = paymentDates.reverse().map((date) => formatIsoDate(date))
-
-  return {
-    paymentDates: orderedPaymentDates,
-    previousCouponDate: formatIsoDate(currentCouponDate),
-    nextCouponDate: orderedPaymentDates[0] ?? null,
-    remainingCouponCount: orderedPaymentDates.length,
-  }
-}
-
-function calculateAccruedInterest(
-  couponRate: number,
-  settlementDateText: string | null,
-  previousCouponDateText: string | null,
-  nextCouponDateText: string | null,
-) {
-  const daysInPeriod = getDayDifference(previousCouponDateText, nextCouponDateText)
-  const daysAccrued = getDayDifference(previousCouponDateText, settlementDateText)
-
-  if (daysInPeriod === null || daysInPeriod === 0 || daysAccrued === null) {
-    return 0
-  }
-
-  const couponCashFlow = couponRate / 2
-
-  return couponCashFlow * (daysAccrued / daysInPeriod)
-}
-
-function priceTreasuryCouponBond(
-  couponRate: number,
-  benchmarkYield: number,
-  settlementDateText: string | null,
-  schedule: TreasuryCouponSchedule,
-) {
-  if (schedule.paymentDates.length === 0) {
-    return {
-      cleanPrice: null,
-      dirtyPrice: null,
-      accruedInterest: null,
-    }
-  }
-
-  const couponCashFlow = couponRate / 2
-  const yieldPerPeriod = benchmarkYield / 100 / 2
-  const lastPaymentDate = schedule.paymentDates[schedule.paymentDates.length - 1]
-
-  let dirtyPrice = 0
-
-  for (const paymentDate of schedule.paymentDates) {
-    const yearFraction = calculateActualActualYearFraction(settlementDateText, paymentDate)
-    const discountFactor = Math.pow(1 + yieldPerPeriod, 2 * yearFraction)
-    const cashFlow = paymentDate === lastPaymentDate ? 100 + couponCashFlow : couponCashFlow
-
-    dirtyPrice += cashFlow / discountFactor
-  }
-
-  const accruedInterest = calculateAccruedInterest(
-    couponRate,
-    settlementDateText,
-    schedule.previousCouponDate,
-    schedule.nextCouponDate,
-  )
-
-  return {
-    cleanPrice: dirtyPrice - accruedInterest,
-    dirtyPrice,
-    accruedInterest,
-  }
-}
-
-function deriveBillPrice(
-  discountRate: number | null,
-  investmentYield: number | null,
-  daysToMaturity: number,
-): { cleanPrice: number | null; quoteType: BootstrapQuoteType; quoteValue: number } | null {
-  if (discountRate !== null) {
-    return {
-      cleanPrice: 100 * (1 - (discountRate / 100) * (daysToMaturity / 360)),
-      quoteType: 'bill_discount_rate',
-      quoteValue: discountRate,
-    }
-  }
-
-  if (investmentYield !== null) {
-    return {
-      cleanPrice: 100 / (1 + (investmentYield / 100) * (daysToMaturity / 365)),
-      quoteType: 'bill_investment_yield',
-      quoteValue: investmentYield,
-    }
-  }
-
-  return null
-}
-
-function deriveCurrentYield(couponRate: number | null, cleanPrice: number | null) {
-  if (couponRate === null || cleanPrice === null || cleanPrice <= 0) {
-    return null
-  }
-
-  return (couponRate / cleanPrice) * 100
-}
-
-function deriveBillYieldToMaturityFromPrice(cleanPrice: number | null, daysToMaturity: number | null) {
-  if (cleanPrice === null || daysToMaturity === null || daysToMaturity <= 0 || cleanPrice <= 0) {
-    return null
-  }
-
-  return ((100 / cleanPrice) - 1) * (365 / daysToMaturity) * 100
 }
 
 function createBootstrapInstrumentId(...parts: Array<string | number | null>) {
