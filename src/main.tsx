@@ -2,12 +2,17 @@ import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 import { Provider } from 'react-redux'
 
+import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community'
 import { store } from '@/app/store'
 import { ThemeProvider } from '@/components/theme-provider'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 
 import { routeTree } from './routeTree.gen'
+import 'ag-grid-community/styles/ag-grid.css'
+import 'ag-grid-community/styles/ag-theme-quartz.css'
 import './index.css'
+
+ModuleRegistry.registerModules([AllCommunityModule])
 
 const router = createRouter({ routeTree, basepath: import.meta.env.BASE_URL })
 
