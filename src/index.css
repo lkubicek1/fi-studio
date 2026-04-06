@@ -263,3 +263,18 @@
 .curve-grid.ag-theme-quartz-dark .ag-cell.derived-type-interpolated {
   color: var(--muted-foreground) !important;
 }
+
+@media (max-width: 767px) {
+  .curve-grid.ag-theme-quartz-dark {
+    --ag-font-size: 10px;
+    --ag-grid-size: 5px;
+    --ag-cell-horizontal-padding: 8px;
+    --ag-header-height: 30px;
+    --ag-row-height: 32px;
+  }
+
+  .curve-grid.ag-theme-quartz-dark .ag-header-cell-label {
+    letter-spacing: 0.1em;
+    font-size: 8px;
+  }
+}

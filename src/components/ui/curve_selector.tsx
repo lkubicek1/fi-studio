@@ -31,13 +31,13 @@ function CurveSourceSummary() {
 
   return (
     <div className="space-y-2">
-      <div className="flex flex-row items-center gap-4">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-4">
         <div className="text-[10px] tracking-[0.18em] text-muted-foreground">PUBLIC DATASET:</div>
         <div className="text-sm text-foreground">{activeCurve?.title ?? 'No active dataset'}</div>
       </div>
 
       {activeCurve?.sourceComponents?.length ? (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-center">
           <Select>
             <SelectTrigger aria-label="Underlying sources" className="w-full min-w-0 flex-1 justify-between px-3 text-left text-foreground sm:min-w-[240px]">
               <SelectValue placeholder="Underlying Sources" />
@@ -59,6 +59,7 @@ function CurveSourceSummary() {
             variant="outline"
             size="sm"
             data-icon="inline-start"
+            className="w-full sm:w-auto"
             onClick={handleRefresh}
             disabled={!selectedCurve || isRefreshing}
           >

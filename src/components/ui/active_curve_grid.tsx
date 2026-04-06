@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { type CSSProperties, useState } from 'react'
 
 import type { ColDef, ValueFormatterParams } from 'ag-grid-community'
 import { AgGridReact } from 'ag-grid-react'
@@ -564,7 +564,12 @@ const forwardSmoothingHeading = 'SMOOTHING'
 const interpolationTargetLabel = 'Interpolation Target: Discount Factor'
 const spotRateConventionLabel = 'Spot Convention: Semiannual'
 const forwardRateConventionLabel = 'Forward Convention: Continuous'
-const workspaceBadgeClassName = 'inline-flex h-8 items-center whitespace-nowrap border border-border bg-background px-2.5 text-xs tracking-wide text-muted-foreground'
+const workspaceBadgeClassName =
+  'inline-flex min-h-8 w-full items-center border border-border bg-background px-2.5 py-1 text-xs leading-4 tracking-wide text-muted-foreground whitespace-normal md:w-auto md:whitespace-nowrap'
+const workspaceHeaderGridClassName =
+  'grid grid-cols-1 gap-3 sm:grid-cols-2 md:min-w-max md:[grid-template-columns:var(--workspace-header-columns)]'
+const workspaceGridHeightClassName = 'h-[420px] sm:h-[500px] lg:h-[560px]'
+const workspaceChartHeightClassName = 'h-[320px] sm:h-[420px] lg:h-[560px]'
 const workspaceHeaderGridTemplateColumns = [
   `${Math.max(...derivedInterpolationMethodOptions.map((option) => option.label.length)) + 6}ch`,
   `${Math.max(...derivedInterpolationStepOptions.map((option) => option.label.length)) + 6}ch`,
@@ -572,6 +577,9 @@ const workspaceHeaderGridTemplateColumns = [
   'max-content',
   'max-content',
 ].join(' ')
+const workspaceHeaderGridStyle = {
+  '--workspace-header-columns': workspaceHeaderGridTemplateColumns,
+} as CSSProperties
 const forwardWorkspaceHeaderGridTemplateColumns = [
   `${Math.max(...derivedInterpolationMethodOptions.map((option) => option.label.length)) + 6}ch`,
   `${Math.max(...derivedInterpolationStepOptions.map((option) => option.label.length)) + 6}ch`,
@@ -581,6 +589,9 @@ const forwardWorkspaceHeaderGridTemplateColumns = [
   'max-content',
   'max-content',
 ].join(' ')
+const forwardWorkspaceHeaderGridStyle = {
+  '--workspace-header-columns': forwardWorkspaceHeaderGridTemplateColumns,
+} as CSSProperties
 
 type CurveWorkspaceTabKey = 'dataset' | 'derived' | 'spot' | 'forward'
 
@@ -1034,7 +1045,7 @@ function DerivedLayerWorkspace({
     <div className="border border-border bg-background/80 p-2">
       <div className="mb-2 border border-border bg-card/55 p-3">
         <div className="overflow-x-auto">
-          <div className="grid min-w-max gap-3" style={{ gridTemplateColumns: workspaceHeaderGridTemplateColumns }}>
+          <div className={workspaceHeaderGridClassName} style={workspaceHeaderGridStyle}>
             <div className="space-y-1">
               <div className="h-4 text-[10px] tracking-[0.18em] text-muted-foreground">{interpolationMethodHeading}</div>
               <Select value={interpolationMethod} onValueChange={(value) => onInterpolationMethodChange(value as TreasuryInterpolationMethod)}>
@@ -1092,7 +1103,7 @@ function DerivedLayerWorkspace({
       </div>
 
       <div className="grid gap-2 lg:grid-cols-[420px_minmax(0,1fr)]">
-        <div className="ag-theme-quartz-dark curve-grid h-[560px] w-full">
+        <div className={`ag-theme-quartz-dark curve-grid w-full ${workspaceGridHeightClassName}`}>
           <AgGridReact<TreasuryDerivedCurveNode>
             rowData={derivedNodes}
             columnDefs={derivedColumnDefs}
@@ -1104,7 +1115,7 @@ function DerivedLayerWorkspace({
           />
         </div>
 
-        <div className="h-[560px] border border-border bg-background/65 p-3">
+        <div className={`${workspaceChartHeightClassName} border border-border bg-background/65 p-3`}>
           <DerivedLayerChart
             nodes={derivedNodes}
             ariaLabel="Derived layer discount factor by year fraction chart"
@@ -1139,7 +1150,7 @@ function SpotCurveWorkspace({
     <div className="border border-border bg-background/80 p-2">
       <div className="mb-2 border border-border bg-card/55 p-3">
         <div className="overflow-x-auto">
-          <div className="grid min-w-max gap-3" style={{ gridTemplateColumns: workspaceHeaderGridTemplateColumns }}>
+          <div className={workspaceHeaderGridClassName} style={workspaceHeaderGridStyle}>
             <div className="space-y-1">
               <div className="h-4 text-[10px] tracking-[0.18em] text-muted-foreground">{interpolationMethodHeading}</div>
               <Select value={interpolationMethod} onValueChange={(value) => onInterpolationMethodChange(value as TreasuryInterpolationMethod)}>
@@ -1191,7 +1202,7 @@ function SpotCurveWorkspace({
       </div>
 
       <div className="grid gap-2 lg:grid-cols-[420px_minmax(0,1fr)]">
-        <div className="ag-theme-quartz-dark curve-grid h-[560px] w-full">
+        <div className={`ag-theme-quartz-dark curve-grid w-full ${workspaceGridHeightClassName}`}>
           <AgGridReact<TreasurySpotCurveNode>
             rowData={spotNodes}
             columnDefs={spotColumnDefs}
@@ -1203,7 +1214,7 @@ function SpotCurveWorkspace({
           />
         </div>
 
-        <div className="h-[560px] border border-border bg-background/65 p-3">
+        <div className={`${workspaceChartHeightClassName} border border-border bg-background/65 p-3`}>
           <SpotCurveChart
             nodes={spotNodes}
             ariaLabel="Treasury spot rate by year fraction chart"
@@ -1242,7 +1253,7 @@ function ForwardCurveWorkspace({
     <div className="border border-border bg-background/80 p-2">
       <div className="mb-2 border border-border bg-card/55 p-3">
         <div className="overflow-x-auto">
-          <div className="grid min-w-max gap-3" style={{ gridTemplateColumns: forwardWorkspaceHeaderGridTemplateColumns }}>
+          <div className={workspaceHeaderGridClassName} style={forwardWorkspaceHeaderGridStyle}>
             <div className="space-y-1">
               <div className="h-4 text-[10px] tracking-[0.18em] text-muted-foreground">{interpolationMethodHeading}</div>
               <Select value={interpolationMethod} onValueChange={(value) => onInterpolationMethodChange(value as TreasuryInterpolationMethod)}>
@@ -1305,7 +1316,7 @@ function ForwardCurveWorkspace({
       </div>
 
       <div className="grid gap-2 lg:grid-cols-[420px_minmax(0,1fr)]">
-        <div className="ag-theme-quartz-dark curve-grid h-[560px] w-full">
+        <div className={`ag-theme-quartz-dark curve-grid w-full ${workspaceGridHeightClassName}`}>
           <AgGridReact<TreasuryForwardCurveNode>
             rowData={forwardNodes}
             columnDefs={forwardColumnDefs}
@@ -1317,7 +1328,7 @@ function ForwardCurveWorkspace({
           />
         </div>
 
-        <div className="h-[560px] border border-border bg-background/65 p-3">
+        <div className={`${workspaceChartHeightClassName} border border-border bg-background/65 p-3`}>
           <ForwardCurveChart
             nodes={forwardNodes}
             ariaLabel="Treasury forward and spot rate by year fraction chart"
@@ -1344,7 +1355,7 @@ function DatasetLayerWorkspace({
   return (
     <div className="border border-border bg-background/80 p-2">
       <div className="mb-2 border border-border bg-card/55 p-3">
-        <div className="flex flex-wrap items-center gap-3 pt-5">
+        <div className="flex flex-wrap items-center gap-3 pt-2 sm:pt-5">
           <span className={workspaceBadgeClassName}>Status: {selectedCurveStatus}</span>
           <span className={workspaceBadgeClassName}>Dataset: UST</span>
           <span className={workspaceBadgeClassName}>Quote Date: {formatText(latestQuoteDate)}</span>
@@ -1355,7 +1366,7 @@ function DatasetLayerWorkspace({
         </div>
       </div>
 
-      <div className="ag-theme-quartz-dark curve-grid h-[560px] w-full">
+      <div className={`ag-theme-quartz-dark curve-grid w-full ${workspaceGridHeightClassName}`}>
         <AgGridReact
           rowData={instruments}
           columnDefs={columnDefs}
@@ -1385,7 +1396,7 @@ function ActiveCurveGrid() {
 
   return (
     <section className="relative text-card-foreground">
-      <div className="relative z-10 flex flex-wrap items-end gap-1 px-3 md:px-4">
+      <div className="relative z-10 grid grid-cols-2 gap-1 px-2 sm:px-3 md:flex md:flex-wrap md:items-end md:px-4">
         {curveWorkspaceTabs.map((tab) => {
           const isActive = tab.key === activeTab
 
@@ -1395,7 +1406,7 @@ function ActiveCurveGrid() {
               type="button"
               onClick={() => setActiveTab(tab.key)}
               className={cn(
-                'relative min-w-38 border border-primary/30 border-b-0 px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60',
+                'relative min-h-[4.5rem] min-w-0 border border-primary/30 px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 md:min-h-0 md:min-w-38 md:border-b-0',
                 isActive
                   ? 'bg-card/95 text-card-foreground shadow-[0_-12px_26px_-20px_rgba(243,144,0,0.9)]'
                   : 'bg-background/82 text-muted-foreground hover:bg-card/80 hover:text-card-foreground',
@@ -1409,7 +1420,7 @@ function ActiveCurveGrid() {
         })}
       </div>
 
-      <div className="-mt-px border border-primary/30 bg-card/95 p-4 shadow-[0_18px_50px_-34px_rgba(243,144,0,0.55)] md:p-5">
+      <div className="border border-primary/30 bg-card/95 p-3 shadow-[0_18px_50px_-34px_rgba(243,144,0,0.55)] sm:p-4 md:-mt-px md:p-5">
         {activeTab === 'dataset' ? (
           <>
             {selectedCurveData?.status === 'failed' ? (
