@@ -1,3 +1,5 @@
+import { useState, type ReactNode } from 'react'
+
 import type { ColDef, ValueFormatterParams } from 'ag-grid-community'
 import { AgGridReact } from 'ag-grid-react'
 
@@ -8,6 +10,7 @@ import {
   selectSelectedCurveLatestBootstrapInstruments,
   selectSelectedCurveLatestQuoteDate,
 } from '@/app/curveSelectionSlice'
+import { cn } from '@/lib/utils'
 
 function formatRate(value: number | null) {
   return typeof value === 'number' ? `${value.toFixed(2)}%` : '—'
@@ -27,6 +30,20 @@ function formatInteger(value: number | null) {
 
 function formatText(value: string | null) {
   return value || '—'
+}
+
+function formatTimestamp(value: string | null) {
+  if (!value) {
+    return '—'
+  }
+
+  const parsedDate = new Date(value)
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return value
+  }
+
+  return parsedDate.toLocaleString()
 }
 
 function formatRateValue(params: ValueFormatterParams<BootstrapInstrument, number | null>) {
@@ -304,61 +321,185 @@ const columnDefs: ColDef<BootstrapInstrument>[] = [
   },
 ]
 
+type CurveWorkspaceTabKey = 'dataset' | 'derived' | 'spot' | 'chart'
+
+type CurveWorkspaceTab = {
+  key: CurveWorkspaceTabKey
+  label: string
+  indexLabel: string
+}
+
+const curveWorkspaceTabs: CurveWorkspaceTab[] = [
+  { key: 'dataset', label: 'Underlying Dataset', indexLabel: '01' },
+  { key: 'derived', label: 'Derived Layer', indexLabel: '02' },
+  { key: 'spot', label: 'Spot Curve', indexLabel: '03' },
+  { key: 'chart', label: 'Curve Chart', indexLabel: '04' },
+]
+
+type PlaceholderPanelProps = {
+  badges: string[]
+  eyebrow: string
+  title: string
+  description: string
+  viewportLabel: string
+  actions?: ReactNode
+}
+
+function PlaceholderPanel({ badges, eyebrow, title, description, viewportLabel, actions }: PlaceholderPanelProps) {
+  return (
+    <>
+      <div className="mb-4 flex flex-wrap items-center gap-2 text-[11px] tracking-wide text-muted-foreground">
+        {badges.map((badge) => (
+          <span key={badge} className="border border-border px-2 py-1">
+            {badge}
+          </span>
+        ))}
+      </div>
+
+      <div className="border border-border bg-background/80 p-2">
+        <div className="grid gap-2 xl:grid-cols-[360px_minmax(0,1fr)]">
+          <div className="border border-dashed border-primary/25 bg-card/70 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] tracking-[0.22em] text-primary">{eyebrow}</p>
+                <h3 className="mt-3 text-sm tracking-[0.14em] text-card-foreground">{title}</h3>
+              </div>
+
+              {actions ? <div className="shrink-0">{actions}</div> : null}
+            </div>
+
+            <p className="mt-3 max-w-sm text-xs leading-5 text-muted-foreground">{description}</p>
+          </div>
+
+          <div className="flex h-[560px] items-center justify-center border border-dashed border-border bg-background/65 p-6 text-center text-sm text-muted-foreground">
+            {viewportLabel}
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
 function ActiveCurveGrid() {
+  const [activeTab, setActiveTab] = useState<CurveWorkspaceTabKey>('dataset')
   const selectedCurveData = useAppSelector(selectSelectedCurveData)
   const bootstrapInstruments = useAppSelector(selectSelectedCurveLatestBootstrapInstruments)
   const latestQuoteDate = useAppSelector(selectSelectedCurveLatestQuoteDate)
 
   const marketQuoteCount = bootstrapInstruments.filter((instrument) => instrument.quoteOrigin === 'market').length
   const benchmarkQuoteCount = bootstrapInstruments.filter((instrument) => instrument.quoteOrigin === 'benchmark').length
-  const settlementDate = bootstrapInstruments[0]?.settlementDate ?? null
 
   return (
-    <section className="relative border border-primary/30 bg-card/95 p-4 text-card-foreground shadow-[0_18px_50px_-34px_rgba(243,144,0,0.55)] md:p-5">
-      <div className="mb-4 flex flex-wrap items-center gap-2 text-[11px] tracking-wide text-muted-foreground">
-        <span className="border border-border px-2 py-1">Status: {selectedCurveData?.status ?? 'idle'}</span>
-        <span className="border border-border px-2 py-1">Quote Date: {formatText(latestQuoteDate)}</span>
-        <span className="border border-border px-2 py-1">Settlement: {formatText(settlementDate)}</span>
-        <span className="border border-border px-2 py-1">Universe: On-the-run / benchmark</span>
-        <span className="border border-border px-2 py-1">Rows: {bootstrapInstruments.length}</span>
-        <span className="border border-border px-2 py-1">Bills: {marketQuoteCount}</span>
-        <span className="border border-border px-2 py-1">Coupon Nodes: {benchmarkQuoteCount}</span>
+    <section className="relative text-card-foreground">
+      <div className="relative z-10 flex flex-wrap items-end gap-1 px-3 md:px-4">
+        {curveWorkspaceTabs.map((tab) => {
+          const isActive = tab.key === activeTab
+
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              className={cn(
+                'relative min-w-38 border border-primary/30 border-b-0 px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60',
+                isActive
+                  ? 'bg-card/95 text-card-foreground shadow-[0_-12px_26px_-20px_rgba(243,144,0,0.9)]'
+                  : 'bg-background/82 text-muted-foreground hover:bg-card/80 hover:text-card-foreground',
+              )}
+              aria-pressed={isActive}
+            >
+              <div className="text-[9px] tracking-[0.24em] text-primary/80">{tab.indexLabel}</div>
+              <div className="mt-1 text-[11px] tracking-[0.14em]">{tab.label}</div>
+            </button>
+          )
+        })}
       </div>
 
-      {selectedCurveData?.status === 'failed' ? (
-        <div className="border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive-foreground">
-          {selectedCurveData.error ?? 'Unable to load curve data.'}
-        </div>
-      ) : null}
+      <div className="-mt-px border border-primary/30 bg-card/95 p-4 shadow-[0_18px_50px_-34px_rgba(243,144,0,0.55)] md:p-5">
+        {activeTab === 'dataset' ? (
+          <>
+            <div className="mb-4 flex flex-wrap items-center gap-2 text-[11px] tracking-wide text-muted-foreground">
+              <span className="border border-border px-2 py-1">Status: {selectedCurveData?.status ?? 'idle'}</span>
+              <span className="border border-border px-2 py-1">Quote Date: {formatText(latestQuoteDate)}</span>
+              <span className="border border-border px-2 py-1">Settlement: T+1</span>
+              <span className="border border-border px-2 py-1">Universe: On-the-run / benchmark</span>
+              <span className="border border-border px-2 py-1">Rows: {bootstrapInstruments.length}</span>
+              <span className="border border-border px-2 py-1">Bills: {marketQuoteCount}</span>
+              <span className="border border-border px-2 py-1">Coupon Nodes: {benchmarkQuoteCount}</span>
+            </div>
 
-      {selectedCurveData?.status === 'loading' && bootstrapInstruments.length === 0 ? (
-        <div className="border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
-          Loading the public Treasury bootstrap dataset...
-        </div>
-      ) : null}
+            {selectedCurveData?.status === 'failed' ? (
+              <div className="border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive-foreground">
+                {selectedCurveData.error ?? 'Unable to load curve data.'}
+              </div>
+            ) : null}
 
-      {selectedCurveData?.status === 'succeeded' && bootstrapInstruments.length === 0 ? (
-        <div className="border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
-          No bootstrap instruments were produced for this Treasury dataset.
-        </div>
-      ) : null}
+            {selectedCurveData?.status === 'loading' && bootstrapInstruments.length === 0 ? (
+              <div className="border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
+                Loading the public Treasury bootstrap dataset...
+              </div>
+            ) : null}
 
-      {bootstrapInstruments.length > 0 ? (
-        <div className="border border-border bg-background/80 p-2">
-          <div className="ag-theme-quartz-dark curve-grid h-[560px] w-full">
-            <AgGridReact
-              rowData={bootstrapInstruments}
-              columnDefs={columnDefs}
-              defaultColDef={defaultColDef}
-              autoSizeStrategy={{ type: 'fitCellContents' }}
-              animateRows
-              onFirstDataRendered={(event) => event.api.autoSizeAllColumns()}
-              theme="legacy"
-              getRowId={(params) => params.data.id}
-            />
-          </div>
-        </div>
-      ) : null}
+            {selectedCurveData?.status === 'succeeded' && bootstrapInstruments.length === 0 ? (
+              <div className="border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
+                No bootstrap instruments were produced for this Treasury dataset.
+              </div>
+            ) : null}
+
+            {bootstrapInstruments.length > 0 ? (
+              <div className="border border-border bg-background/80 p-2">
+                <div className="ag-theme-quartz-dark curve-grid h-[560px] w-full">
+                  <AgGridReact
+                    rowData={bootstrapInstruments}
+                    columnDefs={columnDefs}
+                    defaultColDef={defaultColDef}
+                    autoSizeStrategy={{ type: 'fitCellContents' }}
+                    animateRows
+                    onFirstDataRendered={(event) => event.api.autoSizeAllColumns()}
+                    theme="legacy"
+                    getRowId={(params) => params.data.id}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </>
+        ) : null}
+
+        {activeTab === 'derived' ? (
+          <PlaceholderPanel
+            badges={['Controls: Placeholder', 'Tenor Interval: TBD', 'Interpolation: TBD', 'Derived Grid: Pending']}
+            eyebrow="DERIVED LAYER"
+            title="Interpolation workspace placeholder"
+            description="This tab will host the control shelf above a live AG Grid showing the dense intermediary tenor layer used for curve construction."
+            viewportLabel="Derived-tenor AG Grid placeholder"
+          />
+        ) : null}
+
+        {activeTab === 'spot' ? (
+          <PlaceholderPanel
+            badges={['Bootstrap Engine: Placeholder', 'Input: Derived Layer', 'Rate Convention: TBD', 'Zero Nodes: Pending']}
+            eyebrow="SPOT CURVE"
+            title="Spot-rate output placeholder"
+            description="This tab will surface the bootstrapped zero curve table once the derived discount-factor layer and curve-solving logic are in place."
+            viewportLabel="Spot-curve AG Grid placeholder"
+          />
+        ) : null}
+
+        {activeTab === 'chart' ? (
+          <PlaceholderPanel
+            badges={[
+              `Underlying Data: ${selectedCurveData?.status ?? 'idle'}`,
+              `Last Fetch: ${formatTimestamp(selectedCurveData?.fetchedAt ?? null)}`,
+              'Library: AG Charts',
+              'Series: Spot Curve',
+            ]}
+            eyebrow="CURVE CHART"
+            title="Visualization placeholder"
+            description="This tab will render the final spot curve visually, with room for later overlays such as par yields, forwards, or selected node markers."
+            viewportLabel="AG Charts spot-curve placeholder"
+          />
+        ) : null}
+      </div>
     </section>
   )
 }

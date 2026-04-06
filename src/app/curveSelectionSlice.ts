@@ -4,13 +4,39 @@ import { createTreasuryPublicBootstrapInstruments, type BootstrapInstrument } fr
 import type { RootState } from '@/app/store'
 import { selectableCurveSources, type CurveSource } from '@/services/api/curves.ts'
 
-type CurveCacheStatus = 'idle' | 'loading' | 'succeeded' | 'failed'
+type CurveCacheIdle = {
+  status: 'idle'
+  bootstrapInstruments: null
+  error: null
+  fetchedAt: null
+}
 
-type CachedCurveData = {
-  status: CurveCacheStatus
+type CurveCacheLoading = {
+  status: 'loading'
   bootstrapInstruments: BootstrapInstrument[] | null
-  error: string | null
+  error: null
   fetchedAt: string | null
+}
+
+type CurveCacheSucceeded = {
+  status: 'succeeded'
+  bootstrapInstruments: BootstrapInstrument[]
+  error: null
+  fetchedAt: string
+}
+
+type CurveCacheFailed = {
+  status: 'failed'
+  bootstrapInstruments: BootstrapInstrument[] | null
+  error: string
+  fetchedAt: string | null
+}
+
+type CachedCurveData = CurveCacheIdle | CurveCacheLoading | CurveCacheSucceeded | CurveCacheFailed
+
+type CacheCurveDataArgs = {
+  curveKey: string
+  force?: boolean
 }
 
 type CurveSelectionState = {
@@ -42,11 +68,11 @@ export const cacheCurveData = createAsyncThunk<
     bootstrapInstruments: BootstrapInstrument[]
     fetchedAt: string
   },
-  string,
+  CacheCurveDataArgs,
   { state: RootState; rejectValue: string }
 >(
   'curveSelection/cacheCurveData',
-  async (curveKey, { rejectWithValue, signal }) => {
+  async ({ curveKey }, { rejectWithValue, signal }) => {
     const curve = getCurve(curveKey)
 
     if (!curve) {
@@ -95,7 +121,11 @@ export const cacheCurveData = createAsyncThunk<
     }
   },
   {
-    condition: (curveKey, { getState }) => {
+    condition: ({ curveKey, force }, { getState }) => {
+      if (force) {
+        return true
+      }
+
       const cachedCurve = (getState() as RootState).curveSelection.curveData[curveKey]
 
       return cachedCurve?.status !== 'loading' && cachedCurve?.status !== 'succeeded'
@@ -110,12 +140,13 @@ const curveSelectionSlice = createSlice({
   extraReducers: (builder) => {
     builder
       .addCase(cacheCurveData.pending, (state, action) => {
-        const existingCurveData = state.curveData[action.meta.arg] ?? createEmptyCurveCacheEntry()
+        const existingCurveData = state.curveData[action.meta.arg.curveKey] ?? createEmptyCurveCacheEntry()
 
-        state.curveData[action.meta.arg] = {
-          ...existingCurveData,
+        state.curveData[action.meta.arg.curveKey] = {
           status: 'loading',
+          bootstrapInstruments: existingCurveData.bootstrapInstruments,
           error: null,
+          fetchedAt: existingCurveData.fetchedAt,
         }
       })
       .addCase(cacheCurveData.fulfilled, (state, action) => {
@@ -127,12 +158,13 @@ const curveSelectionSlice = createSlice({
         }
       })
       .addCase(cacheCurveData.rejected, (state, action) => {
-        const existingCurveData = state.curveData[action.meta.arg] ?? createEmptyCurveCacheEntry()
+        const existingCurveData = state.curveData[action.meta.arg.curveKey] ?? createEmptyCurveCacheEntry()
 
-        state.curveData[action.meta.arg] = {
-          ...existingCurveData,
+        state.curveData[action.meta.arg.curveKey] = {
           status: 'failed',
+          bootstrapInstruments: existingCurveData.bootstrapInstruments,
           error: action.payload ?? action.error.message ?? 'Unable to fetch curve data',
+          fetchedAt: existingCurveData.fetchedAt,
         }
       })
   },
