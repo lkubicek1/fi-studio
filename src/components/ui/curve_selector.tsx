@@ -1,12 +1,11 @@
 import { useEffect } from 'react'
 
 import { useAppDispatch, useAppSelector } from '@/app/hooks'
-import { cacheCurveData, selectActiveCurve, selectSelectedCurve, setSelectedCurve } from '@/app/curveSelectionSlice'
-import { curveSources } from '@/services/api/curves.ts'
+import { cacheCurveData, selectActiveCurve, selectSelectedCurve } from '@/app/curveSelectionSlice'
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './select.tsx'
 
-function CurveSelector() {
+function CurveSourceSummary() {
   const dispatch = useAppDispatch()
   const selectedCurve = useAppSelector(selectSelectedCurve)
   const activeCurve = useAppSelector(selectActiveCurve)
@@ -19,35 +18,30 @@ function CurveSelector() {
 
   return (
     <div className="space-y-2">
-      <Select value={selectedCurve} onValueChange={(value) => dispatch(setSelectedCurve(value))}>
-        <SelectTrigger
-          aria-label="Select curve source"
-          className="h-10 w-full px-3 text-left text-foreground"
-        >
-          <SelectValue placeholder="Choose a curve source" />
-        </SelectTrigger>
-        <SelectContent align="end" className="border-border">
-          {curveSources.map((curve) => (
-            <SelectItem
-              key={curve.key}
-              value={curve.key}
-              disabled={curve.requiresExternalConfiguration}
-            >
-              {curve.requiresExternalConfiguration ? `${curve.title} (Needs external config)` : curve.title}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <div className="space-y-1">
+        <div className="text-[10px] tracking-[0.18em] text-muted-foreground">PUBLIC DATASET</div>
+        <div className="text-sm text-foreground">{activeCurve?.title ?? 'No active dataset'}</div>
+      </div>
 
-      {activeCurve ? (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] tracking-wide text-muted-foreground">
-          <span>{activeCurve.market}</span>
-          <span className="text-border">/</span>
-          <span>{activeCurve.kind.replaceAll('_', ' ')}</span>
-        </div>
+      {activeCurve?.sourceComponents?.length ? (
+        <Select>
+          <SelectTrigger aria-label="Underlying sources" className="w-full justify-between px-3 text-left text-foreground">
+            <SelectValue placeholder="Underlying Sources" />
+          </SelectTrigger>
+          <SelectContent align="end" position="popper" className="w-[420px] max-w-[calc(100vw-2rem)] border-border">
+            {activeCurve.sourceComponents.map((component) => (
+              <SelectItem key={component.key} value={component.key} disabled className="py-3 data-disabled:opacity-100">
+                <span className="flex max-w-[380px] flex-col gap-0.5 whitespace-normal leading-5">
+                  <span className="text-foreground">{component.title}</span>
+                  {component.note ? <span className="text-muted-foreground">{component.note}</span> : null}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       ) : null}
     </div>
   )
 }
 
-export { CurveSelector }
+export { CurveSourceSummary }

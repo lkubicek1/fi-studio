@@ -1,11 +1,6 @@
-import { createAsyncThunk, createSelector, createSlice, type PayloadAction } from '@reduxjs/toolkit'
+import { createAsyncThunk, createSelector, createSlice } from '@reduxjs/toolkit'
 
-import {
-  createBootstrapInstruments,
-  marshalCurveData,
-  type BootstrapInstrument,
-  type CurveDocument,
-} from '@/app/curveData'
+import { createTreasuryPublicBootstrapInstruments, type BootstrapInstrument } from '@/app/curveData'
 import type { RootState } from '@/app/store'
 import { selectableCurveSources, type CurveSource } from '@/services/api/curves.ts'
 
@@ -13,10 +8,7 @@ type CurveCacheStatus = 'idle' | 'loading' | 'succeeded' | 'failed'
 
 type CachedCurveData = {
   status: CurveCacheStatus
-  body: string | null
-  parsed: CurveDocument | null
   bootstrapInstruments: BootstrapInstrument[] | null
-  contentType: string | null
   error: string | null
   fetchedAt: string | null
 }
@@ -35,17 +27,10 @@ function getCurve(curveKey: string): CurveSource | null {
   return selectableCurveSources.find((curve) => curve.key === curveKey) ?? null
 }
 
-function isKnownCurve(curveKey: string) {
-  return getCurve(curveKey) !== null
-}
-
 function createEmptyCurveCacheEntry(): CachedCurveData {
   return {
     status: 'idle',
-    body: null,
-    parsed: null,
     bootstrapInstruments: null,
-    contentType: null,
     error: null,
     fetchedAt: null,
   }
@@ -54,10 +39,7 @@ function createEmptyCurveCacheEntry(): CachedCurveData {
 export const cacheCurveData = createAsyncThunk<
   {
     curveKey: string
-    body: string
-    parsed: CurveDocument
     bootstrapInstruments: BootstrapInstrument[]
-    contentType: string | null
     fetchedAt: string
   },
   string,
@@ -72,21 +54,36 @@ export const cacheCurveData = createAsyncThunk<
     }
 
     try {
-      const response = await fetch(curve.url, { signal })
+      const sourceBodies = await Promise.all(
+        curve.sourceComponents.map(async (component) => {
+          const response = await fetch(component.url, { signal })
 
-      if (!response.ok) {
-        return rejectWithValue(`Request failed with status ${response.status}`)
+          if (!response.ok) {
+            throw new Error(`${component.title} request failed with status ${response.status}`)
+          }
+
+          return {
+            key: component.key,
+            body: await response.text(),
+          }
+        }),
+      )
+
+      const billRatesBody = sourceBodies.find((source) => source.key === 'ust_bill_rates')?.body
+      const parYieldBody = sourceBodies.find((source) => source.key === 'ust_par_nominal')?.body
+      const auctionBody = sourceBodies.find((source) => source.key === 'ust_auctions')?.body
+
+      if (!billRatesBody || !parYieldBody || !auctionBody) {
+        return rejectWithValue('Unable to assemble the public Treasury bootstrap dataset')
       }
-
-      const body = await response.text()
-      const parsed = marshalCurveData(curve, body)
 
       return {
         curveKey,
-        body,
-        parsed,
-        bootstrapInstruments: createBootstrapInstruments(curve, parsed),
-        contentType: response.headers.get('content-type'),
+        bootstrapInstruments: createTreasuryPublicBootstrapInstruments({
+          billRatesBody,
+          parYieldBody,
+          auctionBody,
+        }),
         fetchedAt: new Date().toISOString(),
       }
     } catch (error) {
@@ -109,13 +106,7 @@ export const cacheCurveData = createAsyncThunk<
 const curveSelectionSlice = createSlice({
   name: 'curveSelection',
   initialState,
-  reducers: {
-    setSelectedCurve: (state, action: PayloadAction<string>) => {
-      if (isKnownCurve(action.payload)) {
-        state.selectedCurve = action.payload
-      }
-    },
-  },
+  reducers: {},
   extraReducers: (builder) => {
     builder
       .addCase(cacheCurveData.pending, (state, action) => {
@@ -130,10 +121,7 @@ const curveSelectionSlice = createSlice({
       .addCase(cacheCurveData.fulfilled, (state, action) => {
         state.curveData[action.payload.curveKey] = {
           status: 'succeeded',
-          body: action.payload.body,
-          parsed: action.payload.parsed,
           bootstrapInstruments: action.payload.bootstrapInstruments,
-          contentType: action.payload.contentType,
           error: null,
           fetchedAt: action.payload.fetchedAt,
         }
@@ -150,24 +138,21 @@ const curveSelectionSlice = createSlice({
   },
 })
 
-export const { setSelectedCurve } = curveSelectionSlice.actions
 export const curveSelectionReducer = curveSelectionSlice.reducer
 
 export const selectSelectedCurve = (state: RootState) => state.curveSelection.selectedCurve
 export const selectCurveData = (state: RootState) => state.curveSelection.curveData
-export const selectCachedCurveData = (state: RootState, curveKey: string) =>
-  state.curveSelection.curveData[curveKey] ?? null
 
-function getLatestObservationDate(instruments: BootstrapInstrument[]) {
-  let latestObservationDate: string | null = null
+function getLatestQuoteDate(instruments: BootstrapInstrument[]) {
+  let latestQuoteDate: string | null = null
 
   for (const instrument of instruments) {
-    if (instrument.observationDate && (!latestObservationDate || instrument.observationDate > latestObservationDate)) {
-      latestObservationDate = instrument.observationDate
+    if (instrument.quoteDate && (!latestQuoteDate || instrument.quoteDate > latestQuoteDate)) {
+      latestQuoteDate = instrument.quoteDate
     }
   }
 
-  return latestObservationDate
+  return latestQuoteDate
 }
 
 export const selectSelectedCurveData = createSelector(
@@ -175,28 +160,20 @@ export const selectSelectedCurveData = createSelector(
   (curveData, selectedCurve) => curveData[selectedCurve] ?? null,
 )
 
-export const selectSelectedCurveDocument = createSelector(
-  [selectSelectedCurveData],
-  (selectedCurveData) => selectedCurveData?.parsed ?? null,
-)
-
 export const selectSelectedCurveBootstrapInstruments = createSelector(
   [selectSelectedCurveData],
   (selectedCurveData) => selectedCurveData?.bootstrapInstruments ?? [],
 )
 
-export const selectSelectedCurveLatestObservationDate = createSelector(
+export const selectSelectedCurveLatestQuoteDate = createSelector(
   [selectSelectedCurveBootstrapInstruments],
-  (bootstrapInstruments) => getLatestObservationDate(bootstrapInstruments),
+  (bootstrapInstruments) => getLatestQuoteDate(bootstrapInstruments),
 )
 
 export const selectSelectedCurveLatestBootstrapInstruments = createSelector(
-  [selectSelectedCurveBootstrapInstruments, selectSelectedCurveLatestObservationDate],
-  (bootstrapInstruments, latestObservationDate) =>
-    latestObservationDate
-      ? bootstrapInstruments.filter((instrument) => instrument.observationDate === latestObservationDate)
-      : bootstrapInstruments,
+  [selectSelectedCurveBootstrapInstruments, selectSelectedCurveLatestQuoteDate],
+  (bootstrapInstruments, latestQuoteDate) =>
+    latestQuoteDate ? bootstrapInstruments.filter((instrument) => instrument.quoteDate === latestQuoteDate) : bootstrapInstruments,
 )
 
-export const selectActiveCurve = (state: RootState) =>
-  getCurve(selectSelectedCurve(state))
+export const selectActiveCurve = (state: RootState) => getCurve(selectSelectedCurve(state))

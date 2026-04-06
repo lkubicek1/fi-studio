@@ -1,92 +1,50 @@
-export type CurveSource = {
+export type CurveSourceComponent = {
   key: string
   title: string
   url: string
+  note?: string
+}
+
+export type CurveSource = {
+  key: string
+  title: string
   kind: string
   market: string
-  requiresExternalConfiguration?: boolean
+  description: string
+  sourceComponents: CurveSourceComponent[]
+}
+
+export const treasuryBillRatesSource: CurveSourceComponent = {
+  key: 'ust_bill_rates',
+  title: 'Treasury Bill Rates',
+  url: 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_bill_rates&field_tdr_date_value=2026',
+  note: 'Daily Treasury bill quotes with CUSIP and maturity date.',
+}
+
+export const treasuryParYieldSource: CurveSourceComponent = {
+  key: 'ust_par_nominal',
+  title: 'Treasury Par Yield Curve',
+  url: 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve&field_tdr_date_value=2026',
+  note: 'Daily benchmark par yields for standard Treasury tenors.',
+}
+
+export const treasuryAuctionSource: CurveSourceComponent = {
+  key: 'ust_auctions',
+  title: 'Treasury Auction Metadata',
+  url: 'https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/od/auctions_query?sort=-auction_date&page[size]=400',
+  note: 'Recent auction history used to identify the active fixed-coupon benchmark issues.',
 }
 
 export const curveSources: CurveSource[] = [
   {
-    key: 'ust_par_nominal',
-    title: 'US Treasury Par',
-    url: 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve&field_tdr_date_value=2026',
-    kind: 'bootstrap_input',
+    key: 'ust_public_hybrid',
+    title: 'US Treasury Data',
+    kind: 'bootstrap_dataset',
     market: 'USD',
-  },
-  {
-    key: 'ust_bill_rates',
-    title: 'US Treasury Bills',
-    url: 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_bill_rates&field_tdr_date_value=2026',
-    kind: 'bootstrap_input',
-    market: 'USD',
-  },
-  {
-    key: 'ust_real_par',
-    title: 'US Treasury Real (TIPS) Par',
-    url: 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_real_yield_curve&field_tdr_date_value=2026',
-    kind: 'bootstrap_input',
-    market: 'USD',
-  },
-  // TODO: These sources need external configuration before they can be enabled in the UI.
-  // FRED entries need a real API key, and ECB entries need a CORS-safe API endpoint or proxy.
-  {
-    key: 'fred_sofr',
-    title: 'US SOFR',
-    url: 'https://api.stlouisfed.org/fred/series/observations?series_id=SOFR&api_key=YOUR_FRED_KEY&file_type=json',
-    kind: 'front_end_reference',
-    market: 'USD',
-    requiresExternalConfiguration: true,
-  },
-  {
-    key: 'fred_dgs2',
-    title: 'US Treasury 2Y (FRED)',
-    url: 'https://api.stlouisfed.org/fred/series/observations?series_id=DGS2&api_key=YOUR_FRED_KEY&file_type=json',
-    kind: 'benchmark_series',
-    market: 'USD',
-    requiresExternalConfiguration: true,
-  },
-  {
-    key: 'fred_dgs5',
-    title: 'US Treasury 5Y (FRED)',
-    url: 'https://api.stlouisfed.org/fred/series/observations?series_id=DGS5&api_key=YOUR_FRED_KEY&file_type=json',
-    kind: 'benchmark_series',
-    market: 'USD',
-    requiresExternalConfiguration: true,
-  },
-  {
-    key: 'fred_dgs10',
-    title: 'US Treasury 10Y (FRED)',
-    url: 'https://api.stlouisfed.org/fred/series/observations?series_id=DGS10&api_key=YOUR_FRED_KEY&file_type=json',
-    kind: 'benchmark_series',
-    market: 'USD',
-    requiresExternalConfiguration: true,
-  },
-  {
-    key: 'fred_dgs30',
-    title: 'US Treasury 30Y (FRED)',
-    url: 'https://api.stlouisfed.org/fred/series/observations?series_id=DGS30&api_key=YOUR_FRED_KEY&file_type=json',
-    kind: 'benchmark_series',
-    market: 'USD',
-    requiresExternalConfiguration: true,
-  },
-  {
-    key: 'ecb_yc_dataset',
-    title: 'ECB Yield Curve Dataset',
-    url: 'https://data.ecb.europa.eu/data/datasets/YC',
-    kind: 'published_curve_dataset',
-    market: 'EUR',
-    requiresExternalConfiguration: true,
-  },
-  {
-    key: 'ecb_spot_10y_example',
-    title: 'ECB Spot Example (10Y)',
-    url: 'https://data.ecb.europa.eu/data/datasets/YC/YC.B.U2.EUR.4F.G_N_A.SV_C_YM.SR_10Y',
-    kind: 'published_spot_curve',
-    market: 'EUR',
-    requiresExternalConfiguration: true,
+    description:
+      'Single public Treasury dataset assembled in-browser from official bill quotes, benchmark par yields, and auction metadata. Bills carry market quote conventions; coupon bond prices are derived from the benchmark yield using the active issue metadata.',
+    sourceComponents: [treasuryBillRatesSource, treasuryParYieldSource, treasuryAuctionSource],
   },
 ]
 
-export const selectableCurveSources = curveSources.filter((curve) => !curve.requiresExternalConfiguration)
+export const selectableCurveSources = curveSources
