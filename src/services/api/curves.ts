@@ -39,7 +39,7 @@ export const curveSources: CurveSource[] = [
   {
     key: 'ust_public_hybrid',
     title: 'US Treasury Data',
-    kind: 'bootstrap_dataset',
+    type: 'bootstrap_dataset',
     market: 'USD',
     description:
       'Single public Treasury dataset assembled in-browser from official bill quotes, benchmark par yields, and auction metadata. Bill rows use current benchmark bill quotes; coupon bond rows use active on-the-run issue metadata and benchmark-derived prices.',

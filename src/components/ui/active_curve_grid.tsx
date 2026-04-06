@@ -13,8 +13,11 @@ import {
 import { cn } from '@/lib/utils'
 import {
   buildTreasuryDerivedCurveNodes,
+  buildTreasuryForwardCurveNodes,
   buildTreasurySpotCurveNodes,
   type TreasuryDerivedCurveNode,
+  type TreasuryForwardCurveNode,
+  type TreasuryForwardSmoothingMethod,
   type TreasuryInterpolationMethod,
   type TreasurySpotCurveNode,
 } from '@/services/finance/treasury.ts'
@@ -102,6 +105,14 @@ const derivedGridColDef: ColDef<TreasuryDerivedCurveNode> = {
 }
 
 const spotGridColDef: ColDef<TreasurySpotCurveNode> = {
+  sortable: false,
+  filter: false,
+  resizable: true,
+  minWidth: 88,
+  suppressHeaderMenuButton: true,
+}
+
+const forwardGridColDef: ColDef<TreasuryForwardCurveNode> = {
   sortable: false,
   filter: false,
   resizable: true,
@@ -452,6 +463,80 @@ const spotColumnDefs: ColDef<TreasurySpotCurveNode>[] = [
   },
 ]
 
+const forwardColumnDefs: ColDef<TreasuryForwardCurveNode>[] = [
+  {
+    field: 'nodeType',
+    headerName: 'Type',
+    valueFormatter: (params) => formatCurveNodeType(typeof params.value === 'string' ? params.value : null),
+    cellClass: (params) => getCurveNodeTypeCellClass(typeof params.value === 'string' ? params.value : null),
+    width: 110,
+    minWidth: 102,
+    maxWidth: 120,
+  },
+  {
+    field: 'tenorLabel',
+    headerName: 'Tenor',
+    flex: 0.7,
+    minWidth: 76,
+    maxWidth: 92,
+  },
+  {
+    field: 'instrumentLabel',
+    headerName: 'Instrument',
+    valueFormatter: (params) => formatText(typeof params.value === 'string' ? params.value : null),
+    flex: 1.6,
+    minWidth: 150,
+  },
+  {
+    field: 'yearFraction',
+    headerName: 'YearFrac',
+    valueFormatter: (params) => formatYearFraction(typeof params.value === 'number' ? params.value : null),
+    headerClass: 'bootstrap-focus-header',
+    cellClass: 'bootstrap-focus-cell',
+    flex: 1,
+    minWidth: 96,
+  },
+  {
+    field: 'discountFactor',
+    headerName: 'DF',
+    valueFormatter: (params) => formatDiscountFactor(typeof params.value === 'number' ? params.value : null),
+    flex: 0.9,
+    minWidth: 98,
+  },
+  {
+    field: 'spotRate',
+    headerName: 'Spot',
+    valueFormatter: (params) => formatRate(typeof params.value === 'number' ? params.value : null),
+    headerClass: 'bootstrap-focus-header',
+    cellClass: 'bootstrap-focus-cell',
+    flex: 0.9,
+    minWidth: 94,
+  },
+  {
+    field: 'forwardRate',
+    headerName: 'Forward',
+    valueFormatter: (params) => formatRate(typeof params.value === 'number' ? params.value : null),
+    headerClass: 'bootstrap-focus-header',
+    cellClass: 'bootstrap-focus-cell',
+    flex: 0.95,
+    minWidth: 100,
+  },
+  {
+    field: 'forwardStartYearFraction',
+    headerName: 'Fwd From',
+    valueFormatter: (params) => formatYearFraction(typeof params.value === 'number' ? params.value : null),
+    flex: 1,
+    minWidth: 96,
+  },
+  {
+    field: 'forwardIntervalYears',
+    headerName: 'dT',
+    valueFormatter: (params) => formatYearFraction(typeof params.value === 'number' ? params.value : null),
+    flex: 0.85,
+    minWidth: 88,
+  },
+]
+
 type DerivedInterpolationStep = 1 | 3 | 6 | 12
 
 const derivedInterpolationStepOptions: Array<{ value: DerivedInterpolationStep; label: string }> = [
@@ -466,9 +551,19 @@ const derivedInterpolationMethodOptions: Array<{ value: TreasuryInterpolationMet
   { value: 'log_linear_discount_factor', label: 'Log-Linear DF' },
 ]
 
+const forwardSmoothingMethodOptions: Array<{ value: TreasuryForwardSmoothingMethod; label: string }> = [
+  { value: 'raw', label: 'Raw' },
+  { value: 'monotone_convex', label: 'Monotone Convex' },
+  { value: 'pchip_log_discount_factor', label: 'PCHIP Log DF' },
+  { value: 'nelson_siegel_svensson', label: 'NSS' },
+]
+
 const interpolationMethodHeading = 'METHOD'
 const interpolationStepHeading = 'STEP'
+const forwardSmoothingHeading = 'SMOOTHING'
 const interpolationTargetLabel = 'Interpolation Target: Discount Factor'
+const spotRateConventionLabel = 'Spot Convention: Semiannual'
+const forwardRateConventionLabel = 'Forward Convention: Continuous'
 const workspaceBadgeClassName = 'inline-flex h-8 items-center whitespace-nowrap border border-border bg-background px-2.5 text-xs tracking-wide text-muted-foreground'
 const workspaceHeaderGridTemplateColumns = [
   `${Math.max(...derivedInterpolationMethodOptions.map((option) => option.label.length)) + 6}ch`,
@@ -477,8 +572,17 @@ const workspaceHeaderGridTemplateColumns = [
   'max-content',
   'max-content',
 ].join(' ')
+const forwardWorkspaceHeaderGridTemplateColumns = [
+  `${Math.max(...derivedInterpolationMethodOptions.map((option) => option.label.length)) + 6}ch`,
+  `${Math.max(...derivedInterpolationStepOptions.map((option) => option.label.length)) + 6}ch`,
+  `${Math.max(...forwardSmoothingMethodOptions.map((option) => option.label.length)) + 6}ch`,
+  'max-content',
+  'max-content',
+  'max-content',
+  'max-content',
+].join(' ')
 
-type CurveWorkspaceTabKey = 'dataset' | 'derived' | 'spot'
+type CurveWorkspaceTabKey = 'dataset' | 'derived' | 'spot' | 'forward'
 
 type CurveWorkspaceTab = {
   key: CurveWorkspaceTabKey
@@ -490,6 +594,7 @@ const curveWorkspaceTabs: CurveWorkspaceTab[] = [
   { key: 'dataset', label: 'Underlying Dataset', indexLabel: '01' },
   { key: 'derived', label: 'Derived Layer', indexLabel: '02' },
   { key: 'spot', label: 'Spot Curve', indexLabel: '03' },
+  { key: 'forward', label: 'Forward Rates', indexLabel: '04' },
 ]
 
 function formatAxisNumber(value: number) {
@@ -774,6 +879,137 @@ function SpotCurveChart({
   )
 }
 
+function ForwardCurveChart({
+  nodes,
+  ariaLabel,
+}: {
+  nodes: TreasuryForwardCurveNode[]
+  ariaLabel: string
+}) {
+  const chartPoints = [...nodes].sort((left, right) => left.yearFraction - right.yearFraction)
+  const forwardPoints = chartPoints.filter(
+    (point): point is TreasuryForwardCurveNode & { forwardRate: number } => point.forwardRate !== null,
+  )
+
+  if (chartPoints.length === 0 || forwardPoints.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        No forward-rate nodes are available for the forward-rate chart.
+      </div>
+    )
+  }
+
+  const width = 720
+  const height = 560
+  const padding = { top: 28, right: 24, bottom: 48, left: 68 }
+  const plotWidth = width - padding.left - padding.right
+  const plotHeight = height - padding.top - padding.bottom
+
+  const yearFractions = chartPoints.map((point) => point.yearFraction)
+  const rateValues = [...chartPoints.map((point) => point.spotRate), ...forwardPoints.map((point) => point.forwardRate)]
+  const minYearFraction = Math.min(...yearFractions)
+  const maxYearFraction = Math.max(...yearFractions)
+  const minRate = Math.min(...rateValues)
+  const maxRate = Math.max(...rateValues)
+  const xPadding = maxYearFraction === minYearFraction ? 0.25 : (maxYearFraction - minYearFraction) * 0.04
+  const yPadding = maxRate === minRate ? 0.25 : (maxRate - minRate) * 0.08
+  const xDomainMin = Math.max(0, minYearFraction - xPadding)
+  const xDomainMax = maxYearFraction + xPadding
+  const yDomainMin = minRate - yPadding
+  const yDomainMax = maxRate + yPadding
+  const xTicks = createLinearTicks(xDomainMin, xDomainMax, 5)
+  const yTicks = createLinearTicks(yDomainMin, yDomainMax, 5)
+  const spotLinePath = chartPoints.map((point) => `${scaleX(point.yearFraction)},${scaleY(point.spotRate)}`).join(' ')
+  const forwardLinePath = forwardPoints.map((point) => `${scaleX(point.yearFraction)},${scaleY(point.forwardRate)}`).join(' ')
+
+  function scaleX(value: number) {
+    return padding.left + ((value - xDomainMin) / (xDomainMax - xDomainMin)) * plotWidth
+  }
+
+  function scaleY(value: number) {
+    return height - padding.bottom - ((value - yDomainMin) / (yDomainMax - yDomainMin)) * plotHeight
+  }
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full" preserveAspectRatio="none" role="img" aria-label={ariaLabel}>
+      <rect x="0" y="0" width={width} height={height} fill="var(--background)" opacity="0.35" />
+
+      {yTicks.map((tick) => {
+        const y = scaleY(tick)
+
+        return (
+          <g key={`y-${tick}`}>
+            <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="var(--border)" strokeDasharray="4 6" opacity="0.9" />
+            <text x={padding.left - 12} y={y + 4} fill="var(--muted-foreground)" fontSize="10" textAnchor="end">
+              {formatAxisRate(tick)}
+            </text>
+          </g>
+        )
+      })}
+
+      {xTicks.map((tick) => {
+        const x = scaleX(tick)
+
+        return (
+          <g key={`x-${tick}`}>
+            <line x1={x} y1={padding.top} x2={x} y2={height - padding.bottom} stroke="var(--border)" strokeDasharray="4 6" opacity="0.75" />
+            <text x={x} y={height - 18} fill="var(--muted-foreground)" fontSize="10" textAnchor="middle">
+              {formatAxisNumber(tick)}
+            </text>
+          </g>
+        )
+      })}
+
+      <line x1={padding.left} y1={height - padding.bottom} x2={width - padding.right} y2={height - padding.bottom} stroke="var(--muted-foreground)" opacity="0.9" />
+      <line x1={padding.left} y1={padding.top} x2={padding.left} y2={height - padding.bottom} stroke="var(--muted-foreground)" opacity="0.9" />
+
+      <g transform={`translate(${width - padding.right - 176}, ${padding.top + 6})`}>
+        <rect x="0" y="0" width="176" height="72" fill="var(--background)" fillOpacity="0.72" stroke="var(--border)" />
+        <line x1="12" y1="14" x2="24" y2="14" stroke="var(--chart-2)" strokeWidth="2" strokeDasharray="6 5" />
+        <text x="32" y="18" fill="var(--card-foreground)" fontSize="10">
+          Spot Curve
+        </text>
+        <line x1="12" y1="30" x2="24" y2="30" stroke="var(--primary)" strokeWidth="2" />
+        <text x="32" y="34" fill="var(--card-foreground)" fontSize="10">
+          Forward Curve
+        </text>
+        <circle cx="14" cy="47" r="4.5" fill="var(--primary)" stroke="var(--background)" strokeWidth="1.5" />
+        <text x="26" y="51" fill="var(--card-foreground)" fontSize="10">
+          Anchor Node
+        </text>
+        <circle cx="14" cy="62" r="3.25" fill="var(--background)" stroke="var(--primary)" strokeWidth="1.3" />
+        <text x="26" y="66" fill="var(--muted-foreground)" fontSize="10">
+          Interpolated Node
+        </text>
+      </g>
+
+      <polyline fill="none" points={spotLinePath} stroke="var(--chart-2)" strokeOpacity="0.9" strokeWidth="2" strokeDasharray="6 5" />
+      <polyline fill="none" points={forwardLinePath} stroke="var(--primary)" strokeOpacity="0.85" strokeWidth="2" />
+
+      {forwardPoints.map((point) => (
+        <circle
+          key={point.id}
+          cx={scaleX(point.yearFraction)}
+          cy={scaleY(point.forwardRate)}
+          r={point.nodeType === 'anchor' ? 5 : 3.25}
+          fill={point.nodeType === 'anchor' ? 'var(--primary)' : 'var(--background)'}
+          stroke={point.nodeType === 'anchor' ? 'var(--background)' : 'var(--primary)'}
+          strokeWidth={point.nodeType === 'anchor' ? 1.5 : 1.3}
+        >
+          <title>{`${point.nodeType === 'anchor' ? 'Anchor' : 'Interpolated'} | ${point.tenorLabel} | ${point.instrumentLabel ?? 'Synthetic node'} | YearFrac ${formatYearFraction(point.yearFraction)} | Spot ${formatRate(point.spotRate)} | Forward ${formatRate(point.forwardRate)} | From ${formatYearFraction(point.forwardStartYearFraction)} | dT ${formatYearFraction(point.forwardIntervalYears)} | ${point.methodLabel}`}</title>
+        </circle>
+      ))}
+
+      <text x={padding.left} y={16} fill="var(--muted-foreground)" fontSize="11" letterSpacing="0.18em">
+        SPOT / FORWARD RATE (%)
+      </text>
+      <text x={width / 2 + padding.left} y={height} fill="var(--muted-foreground)" fontSize="11" letterSpacing="0.18em" textAnchor="end">
+        YEARS TO MATURITY
+      </text>
+    </svg>
+  )
+}
+
 function DerivedLayerWorkspace({
   instruments,
   interpolationIntervalMonths,
@@ -938,7 +1174,7 @@ function SpotCurveWorkspace({
 
             <div className="space-y-1">
               <div className="h-4" aria-hidden="true" />
-              <span className={workspaceBadgeClassName}>Rate Convention: Semiannual</span>
+              <span className={workspaceBadgeClassName}>{spotRateConventionLabel}</span>
             </div>
 
             <div className="space-y-1">
@@ -971,6 +1207,120 @@ function SpotCurveWorkspace({
           <SpotCurveChart
             nodes={spotNodes}
             ariaLabel="Treasury spot rate by year fraction chart"
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ForwardCurveWorkspace({
+  instruments,
+  interpolationIntervalMonths,
+  interpolationMethod,
+  smoothingMethod,
+  onInterpolationIntervalMonthsChange,
+  onInterpolationMethodChange,
+  onSmoothingMethodChange,
+}: {
+  instruments: BootstrapInstrument[]
+  interpolationIntervalMonths: DerivedInterpolationStep
+  interpolationMethod: TreasuryInterpolationMethod
+  smoothingMethod: TreasuryForwardSmoothingMethod
+  onInterpolationIntervalMonthsChange: (value: DerivedInterpolationStep) => void
+  onInterpolationMethodChange: (value: TreasuryInterpolationMethod) => void
+  onSmoothingMethodChange: (value: TreasuryForwardSmoothingMethod) => void
+}) {
+  const forwardNodes = buildTreasuryForwardCurveNodes(instruments, {
+    interpolationIntervalMonths,
+    interpolationMethod,
+    smoothingMethod,
+  })
+  const forwardCount = forwardNodes.filter((node) => node.forwardRate !== null).length
+
+  return (
+    <div className="border border-border bg-background/80 p-2">
+      <div className="mb-2 border border-border bg-card/55 p-3">
+        <div className="overflow-x-auto">
+          <div className="grid min-w-max gap-3" style={{ gridTemplateColumns: forwardWorkspaceHeaderGridTemplateColumns }}>
+            <div className="space-y-1">
+              <div className="h-4 text-[10px] tracking-[0.18em] text-muted-foreground">{interpolationMethodHeading}</div>
+              <Select value={interpolationMethod} onValueChange={(value) => onInterpolationMethodChange(value as TreasuryInterpolationMethod)}>
+                <SelectTrigger className="w-full min-w-0 bg-background text-left text-foreground">
+                  <SelectValue placeholder="Select method" />
+                </SelectTrigger>
+                <SelectContent align="start" position="popper" className="border-border">
+                  {derivedInterpolationMethodOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <div className="h-4 text-[10px] tracking-[0.18em] text-muted-foreground">{interpolationStepHeading}</div>
+              <Select value={String(interpolationIntervalMonths)} onValueChange={(value) => onInterpolationIntervalMonthsChange(Number(value) as DerivedInterpolationStep)}>
+                <SelectTrigger className="w-full min-w-0 bg-background text-left text-foreground">
+                  <SelectValue placeholder="Select step" />
+                </SelectTrigger>
+                <SelectContent align="start" position="popper" className="border-border">
+                  {derivedInterpolationStepOptions.map((option) => (
+                    <SelectItem key={option.value} value={String(option.value)}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <div className="h-4 text-[10px] tracking-[0.18em] text-muted-foreground">{forwardSmoothingHeading}</div>
+              <Select value={smoothingMethod} onValueChange={(value) => onSmoothingMethodChange(value as TreasuryForwardSmoothingMethod)}>
+                <SelectTrigger className="w-full min-w-0 bg-background text-left text-foreground">
+                  <SelectValue placeholder="Select smoothing" />
+                </SelectTrigger>
+                <SelectContent align="start" position="popper" className="border-border">
+                  {forwardSmoothingMethodOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <div className="h-4" aria-hidden="true" />
+              <span className={workspaceBadgeClassName}>{forwardRateConventionLabel}</span>
+            </div>
+
+            <div className="space-y-1">
+              <div className="h-4" aria-hidden="true" />
+              <span className={workspaceBadgeClassName}>Forward Rates: {forwardCount}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-2 lg:grid-cols-[420px_minmax(0,1fr)]">
+        <div className="ag-theme-quartz-dark curve-grid h-[560px] w-full">
+          <AgGridReact<TreasuryForwardCurveNode>
+            rowData={forwardNodes}
+            columnDefs={forwardColumnDefs}
+            defaultColDef={forwardGridColDef}
+            animateRows
+            theme="legacy"
+            getRowClass={(params) => (params.data?.nodeType === 'anchor' ? 'derived-anchor-row' : 'derived-interpolated-row')}
+            getRowId={(params) => params.data.id}
+          />
+        </div>
+
+        <div className="h-[560px] border border-border bg-background/65 p-3">
+          <ForwardCurveChart
+            nodes={forwardNodes}
+            ariaLabel="Treasury forward and spot rate by year fraction chart"
           />
         </div>
       </div>
@@ -1025,6 +1375,7 @@ function ActiveCurveGrid() {
   const [activeTab, setActiveTab] = useState<CurveWorkspaceTabKey>('dataset')
   const [interpolationIntervalMonths, setInterpolationIntervalMonths] = useState<DerivedInterpolationStep>(6)
   const [interpolationMethod, setInterpolationMethod] = useState<TreasuryInterpolationMethod>('log_linear_discount_factor')
+  const [forwardSmoothingMethod, setForwardSmoothingMethod] = useState<TreasuryForwardSmoothingMethod>('monotone_convex')
   const selectedCurveData = useAppSelector(selectSelectedCurveData)
   const bootstrapInstruments = useAppSelector(selectSelectedCurveLatestBootstrapInstruments)
   const latestQuoteDate = useAppSelector(selectSelectedCurveLatestQuoteDate)
@@ -1150,6 +1501,40 @@ function ActiveCurveGrid() {
                 interpolationMethod={interpolationMethod}
                 onInterpolationIntervalMonthsChange={setInterpolationIntervalMonths}
                 onInterpolationMethodChange={setInterpolationMethod}
+              />
+            ) : null}
+          </>
+        ) : null}
+
+        {activeTab === 'forward' ? (
+          <>
+            {selectedCurveData?.status === 'failed' ? (
+              <div className="border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive-foreground">
+                {selectedCurveData.error ?? 'Unable to load curve data.'}
+              </div>
+            ) : null}
+
+            {selectedCurveData?.status === 'loading' && bootstrapInstruments.length === 0 ? (
+              <div className="border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
+                Loading the public Treasury bootstrap dataset...
+              </div>
+            ) : null}
+
+            {selectedCurveData?.status === 'succeeded' && bootstrapInstruments.length === 0 ? (
+              <div className="border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
+                No bootstrap instruments were produced for this Treasury dataset.
+              </div>
+            ) : null}
+
+            {bootstrapInstruments.length > 0 ? (
+              <ForwardCurveWorkspace
+                instruments={bootstrapInstruments}
+                interpolationIntervalMonths={interpolationIntervalMonths}
+                interpolationMethod={interpolationMethod}
+                smoothingMethod={forwardSmoothingMethod}
+                onInterpolationIntervalMonthsChange={setInterpolationIntervalMonths}
+                onInterpolationMethodChange={setInterpolationMethod}
+                onSmoothingMethodChange={setForwardSmoothingMethod}
               />
             ) : null}
           </>
