@@ -6,6 +6,7 @@ import { MarketStatus } from '@/components/ui/market_status.tsx'
 function RootLayout() {
   const navItemClassName =
     'inline-flex items-center justify-center border border-border/70 px-2.5 py-1 text-center text-[11px] tracking-[0.14em] uppercase md:border-0 md:px-0 md:py-0 md:text-sm md:tracking-normal md:normal-case'
+  const inactiveNavItemClassName = `${navItemClassName} cursor-not-allowed border-border/40 text-muted-foreground/50`
 
   return (
     <div className="min-h-svh bg-background">
@@ -21,8 +22,8 @@ function RootLayout() {
               <Link to="/" className={`${navItemClassName} bg-primary text-primary-foreground md:px-2 md:py-1`}>
                 Curves
               </Link>
-              <span className={navItemClassName}>Pricing</span>
-              <span className={navItemClassName}>Risk</span>
+              <span className={inactiveNavItemClassName}>Pricing</span>
+              <span className={inactiveNavItemClassName}>Risk</span>
             </nav>
           </div>
           <MarketStatus />
