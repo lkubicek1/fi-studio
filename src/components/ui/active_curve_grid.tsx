@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 
 import type { ColDef, ValueFormatterParams } from 'ag-grid-community'
 import { AgGridReact } from 'ag-grid-react'
@@ -13,8 +13,10 @@ import {
 import { cn } from '@/lib/utils'
 import {
   buildTreasuryDerivedCurveNodes,
+  buildTreasurySpotCurveNodes,
   type TreasuryDerivedCurveNode,
   type TreasuryInterpolationMethod,
+  type TreasurySpotCurveNode,
 } from '@/services/finance/treasury.ts'
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './select.tsx'
@@ -43,20 +45,6 @@ function formatText(value: string | null) {
   return value || '—'
 }
 
-function formatTimestamp(value: string | null) {
-  if (!value) {
-    return '—'
-  }
-
-  const parsedDate = new Date(value)
-
-  if (Number.isNaN(parsedDate.getTime())) {
-    return value
-  }
-
-  return parsedDate.toLocaleString()
-}
-
 function formatRateValue(params: ValueFormatterParams<BootstrapInstrument, number | null>) {
   return formatRate(typeof params.value === 'number' ? params.value : null)
 }
@@ -81,6 +69,18 @@ function formatEnumLabel(value: string) {
   return value.replaceAll('_', ' ')
 }
 
+function formatCurveNodeType(value: string | null | undefined) {
+  return value === 'anchor' ? 'Anchor' : value === 'interpolated' ? 'Interpolated' : '—'
+}
+
+function getCurveNodeTypeCellClass(value: string | null | undefined) {
+  return cn(
+    'derived-type-cell',
+    value === 'anchor' ? 'derived-type-anchor' : undefined,
+    value === 'interpolated' ? 'derived-type-interpolated' : undefined,
+  )
+}
+
 function compareByTenor(left?: BootstrapInstrument, right?: BootstrapInstrument) {
   return (left?.tenor.months ?? Number.MAX_SAFE_INTEGER) - (right?.tenor.months ?? Number.MAX_SAFE_INTEGER)
 }
@@ -94,6 +94,14 @@ const defaultColDef: ColDef<BootstrapInstrument> = {
 }
 
 const derivedGridColDef: ColDef<TreasuryDerivedCurveNode> = {
+  sortable: false,
+  filter: false,
+  resizable: true,
+  minWidth: 88,
+  suppressHeaderMenuButton: true,
+}
+
+const spotGridColDef: ColDef<TreasurySpotCurveNode> = {
   sortable: false,
   filter: false,
   resizable: true,
@@ -343,14 +351,9 @@ const columnDefs: ColDef<BootstrapInstrument>[] = [
 const derivedColumnDefs: ColDef<TreasuryDerivedCurveNode>[] = [
   {
     field: 'nodeType',
-    headerName: 'Kind',
-    valueFormatter: (params) => (params.value === 'anchor' ? 'Anchor' : params.value === 'interpolated' ? 'Interpolated' : '—'),
-    cellClass: (params) =>
-      cn(
-        'derived-kind-cell',
-        params.value === 'anchor' ? 'derived-kind-anchor' : undefined,
-        params.value === 'interpolated' ? 'derived-kind-interpolated' : undefined,
-      ),
+    headerName: 'Type',
+    valueFormatter: (params) => formatCurveNodeType(typeof params.value === 'string' ? params.value : null),
+    cellClass: (params) => getCurveNodeTypeCellClass(typeof params.value === 'string' ? params.value : null),
     width: 110,
     minWidth: 102,
     maxWidth: 120,
@@ -396,6 +399,59 @@ const derivedColumnDefs: ColDef<TreasuryDerivedCurveNode>[] = [
   },
 ]
 
+const spotColumnDefs: ColDef<TreasurySpotCurveNode>[] = [
+  {
+    field: 'nodeType',
+    headerName: 'Type',
+    valueFormatter: (params) => formatCurveNodeType(typeof params.value === 'string' ? params.value : null),
+    cellClass: (params) => getCurveNodeTypeCellClass(typeof params.value === 'string' ? params.value : null),
+    width: 110,
+    minWidth: 102,
+    maxWidth: 120,
+  },
+  {
+    field: 'tenorLabel',
+    headerName: 'Tenor',
+    flex: 0.7,
+    minWidth: 76,
+    maxWidth: 92,
+  },
+  {
+    field: 'instrumentLabel',
+    headerName: 'Instrument',
+    valueFormatter: (params) => formatText(typeof params.value === 'string' ? params.value : null),
+    flex: 1.7,
+    minWidth: 150,
+  },
+  {
+    field: 'yearFraction',
+    headerName: 'YearFrac',
+    valueFormatter: (params) => formatYearFraction(typeof params.value === 'number' ? params.value : null),
+    headerClass: 'bootstrap-focus-header',
+    cellClass: 'bootstrap-focus-cell',
+    flex: 1,
+    minWidth: 96,
+  },
+  {
+    field: 'discountFactor',
+    headerName: 'DF',
+    valueFormatter: (params) => formatDiscountFactor(typeof params.value === 'number' ? params.value : null),
+    headerClass: 'bootstrap-focus-header',
+    cellClass: 'bootstrap-focus-cell',
+    flex: 0.9,
+    minWidth: 98,
+  },
+  {
+    field: 'spotRate',
+    headerName: 'Spot',
+    valueFormatter: (params) => formatRate(typeof params.value === 'number' ? params.value : null),
+    headerClass: 'bootstrap-focus-header',
+    cellClass: 'bootstrap-focus-cell',
+    flex: 0.9,
+    minWidth: 94,
+  },
+]
+
 type DerivedInterpolationStep = 1 | 3 | 6 | 12
 
 const derivedInterpolationStepOptions: Array<{ value: DerivedInterpolationStep; label: string }> = [
@@ -422,7 +478,7 @@ const workspaceHeaderGridTemplateColumns = [
   'max-content',
 ].join(' ')
 
-type CurveWorkspaceTabKey = 'dataset' | 'derived' | 'spot' | 'chart'
+type CurveWorkspaceTabKey = 'dataset' | 'derived' | 'spot'
 
 type CurveWorkspaceTab = {
   key: CurveWorkspaceTabKey
@@ -434,52 +490,7 @@ const curveWorkspaceTabs: CurveWorkspaceTab[] = [
   { key: 'dataset', label: 'Underlying Dataset', indexLabel: '01' },
   { key: 'derived', label: 'Derived Layer', indexLabel: '02' },
   { key: 'spot', label: 'Spot Curve', indexLabel: '03' },
-  { key: 'chart', label: 'Curve Chart', indexLabel: '04' },
 ]
-
-type PlaceholderPanelProps = {
-  badges: string[]
-  eyebrow: string
-  title: string
-  description: string
-  viewportLabel: string
-  actions?: ReactNode
-}
-
-function PlaceholderPanel({ badges, eyebrow, title, description, viewportLabel, actions }: PlaceholderPanelProps) {
-  return (
-    <>
-      <div className="mb-4 flex flex-wrap items-center gap-2 text-[11px] tracking-wide text-muted-foreground">
-        {badges.map((badge) => (
-          <span key={badge} className="border border-border px-2 py-1">
-            {badge}
-          </span>
-        ))}
-      </div>
-
-      <div className="border border-border bg-background/80 p-2">
-        <div className="grid gap-2 xl:grid-cols-[360px_minmax(0,1fr)]">
-          <div className="border border-dashed border-primary/25 bg-card/70 p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-[10px] tracking-[0.22em] text-primary">{eyebrow}</p>
-                <h3 className="mt-3 text-sm tracking-[0.14em] text-card-foreground">{title}</h3>
-              </div>
-
-              {actions ? <div className="shrink-0">{actions}</div> : null}
-            </div>
-
-            <p className="mt-3 max-w-sm text-xs leading-5 text-muted-foreground">{description}</p>
-          </div>
-
-          <div className="flex h-[560px] items-center justify-center border border-dashed border-border bg-background/65 p-6 text-center text-sm text-muted-foreground">
-            {viewportLabel}
-          </div>
-        </div>
-      </div>
-    </>
-  )
-}
 
 function formatAxisNumber(value: number) {
   if (Math.abs(value) >= 10) {
@@ -495,6 +506,10 @@ function formatAxisNumber(value: number) {
 
 function formatAxisDiscountFactor(value: number) {
   return value.toFixed(4)
+}
+
+function formatAxisRate(value: number) {
+  return `${formatAxisNumber(value)}%`
 }
 
 function createLinearTicks(min: number, max: number, count: number) {
@@ -633,6 +648,132 @@ function DerivedLayerChart({
   )
 }
 
+function SpotCurveChart({
+  nodes,
+  ariaLabel,
+  showCurveLine = true,
+  showInterpolatedLegend = true,
+}: {
+  nodes: TreasurySpotCurveNode[]
+  ariaLabel: string
+  showCurveLine?: boolean
+  showInterpolatedLegend?: boolean
+}) {
+  if (nodes.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        No spot-rate nodes are available for the spot-curve chart.
+      </div>
+    )
+  }
+
+  const chartPoints = [...nodes].sort((left, right) => left.yearFraction - right.yearFraction)
+
+  const width = 720
+  const height = 560
+  const padding = { top: 28, right: 24, bottom: 48, left: 68 }
+  const plotWidth = width - padding.left - padding.right
+  const plotHeight = height - padding.top - padding.bottom
+
+  const yearFractions = chartPoints.map((point) => point.yearFraction)
+  const spotRates = chartPoints.map((point) => point.spotRate)
+  const minYearFraction = Math.min(...yearFractions)
+  const maxYearFraction = Math.max(...yearFractions)
+  const minSpotRate = Math.min(...spotRates)
+  const maxSpotRate = Math.max(...spotRates)
+  const xPadding = maxYearFraction === minYearFraction ? 0.25 : (maxYearFraction - minYearFraction) * 0.04
+  const yPadding = maxSpotRate === minSpotRate ? 0.25 : (maxSpotRate - minSpotRate) * 0.08
+  const xDomainMin = Math.max(0, minYearFraction - xPadding)
+  const xDomainMax = maxYearFraction + xPadding
+  const yDomainMin = minSpotRate - yPadding
+  const yDomainMax = maxSpotRate + yPadding
+  const xTicks = createLinearTicks(xDomainMin, xDomainMax, 5)
+  const yTicks = createLinearTicks(yDomainMin, yDomainMax, 5)
+  const linePath = chartPoints.map((point) => `${scaleX(point.yearFraction)},${scaleY(point.spotRate)}`).join(' ')
+
+  function scaleX(value: number) {
+    return padding.left + ((value - xDomainMin) / (xDomainMax - xDomainMin)) * plotWidth
+  }
+
+  function scaleY(value: number) {
+    return height - padding.bottom - ((value - yDomainMin) / (yDomainMax - yDomainMin)) * plotHeight
+  }
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full" preserveAspectRatio="none" role="img" aria-label={ariaLabel}>
+      <rect x="0" y="0" width={width} height={height} fill="var(--background)" opacity="0.35" />
+
+      {yTicks.map((tick) => {
+        const y = scaleY(tick)
+
+        return (
+          <g key={`y-${tick}`}>
+            <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="var(--border)" strokeDasharray="4 6" opacity="0.9" />
+            <text x={padding.left - 12} y={y + 4} fill="var(--muted-foreground)" fontSize="10" textAnchor="end">
+              {formatAxisRate(tick)}
+            </text>
+          </g>
+        )
+      })}
+
+      {xTicks.map((tick) => {
+        const x = scaleX(tick)
+
+        return (
+          <g key={`x-${tick}`}>
+            <line x1={x} y1={padding.top} x2={x} y2={height - padding.bottom} stroke="var(--border)" strokeDasharray="4 6" opacity="0.75" />
+            <text x={x} y={height - 18} fill="var(--muted-foreground)" fontSize="10" textAnchor="middle">
+              {formatAxisNumber(tick)}
+            </text>
+          </g>
+        )
+      })}
+
+      <line x1={padding.left} y1={height - padding.bottom} x2={width - padding.right} y2={height - padding.bottom} stroke="var(--muted-foreground)" opacity="0.9" />
+      <line x1={padding.left} y1={padding.top} x2={padding.left} y2={height - padding.bottom} stroke="var(--muted-foreground)" opacity="0.9" />
+
+      <g transform={`translate(${width - padding.right - 136}, ${padding.top + 6})`}>
+        <rect x="0" y="0" width="136" height="42" fill="var(--background)" fillOpacity="0.72" stroke="var(--border)" />
+        <circle cx="14" cy="14" r="4.5" fill="var(--primary)" stroke="var(--background)" strokeWidth="1.5" />
+        <text x="26" y="18" fill="var(--card-foreground)" fontSize="10">
+          Anchor Node
+        </text>
+        {showInterpolatedLegend ? (
+          <>
+            <circle cx="14" cy="30" r="3.25" fill="var(--background)" stroke="var(--muted-foreground)" strokeWidth="1.3" />
+            <text x="26" y="34" fill="var(--muted-foreground)" fontSize="10">
+              Interpolated Node
+            </text>
+          </>
+        ) : null}
+      </g>
+
+      {showCurveLine ? <polyline fill="none" points={linePath} stroke="var(--primary)" strokeOpacity="0.8" strokeWidth="2" /> : null}
+
+      {chartPoints.map((point) => (
+        <circle
+          key={point.id}
+          cx={scaleX(point.yearFraction)}
+          cy={scaleY(point.spotRate)}
+          r={point.nodeType === 'anchor' ? 5 : 3.25}
+          fill={point.nodeType === 'anchor' ? 'var(--primary)' : 'var(--background)'}
+          stroke={point.nodeType === 'anchor' ? 'var(--background)' : 'var(--muted-foreground)'}
+          strokeWidth={point.nodeType === 'anchor' ? 1.5 : 1.3}
+        >
+          <title>{`${point.nodeType === 'anchor' ? 'Anchor' : 'Interpolated'} | ${point.tenorLabel} | ${point.instrumentLabel ?? 'Synthetic node'} | YearFrac ${formatYearFraction(point.yearFraction)} | Spot ${formatRate(point.spotRate)} | ${point.methodLabel}`}</title>
+        </circle>
+      ))}
+
+      <text x={padding.left} y={16} fill="var(--muted-foreground)" fontSize="11" letterSpacing="0.18em">
+        SPOT RATE (%)
+      </text>
+      <text x={width / 2 + padding.left} y={height} fill="var(--muted-foreground)" fontSize="11" letterSpacing="0.18em" textAnchor="end">
+        YEARS TO MATURITY
+      </text>
+    </svg>
+  )
+}
+
 function DerivedLayerWorkspace({
   instruments,
   interpolationIntervalMonths,
@@ -738,6 +879,105 @@ function DerivedLayerWorkspace({
   )
 }
 
+function SpotCurveWorkspace({
+  instruments,
+  interpolationIntervalMonths,
+  interpolationMethod,
+  onInterpolationIntervalMonthsChange,
+  onInterpolationMethodChange,
+}: {
+  instruments: BootstrapInstrument[]
+  interpolationIntervalMonths: DerivedInterpolationStep
+  interpolationMethod: TreasuryInterpolationMethod
+  onInterpolationIntervalMonthsChange: (value: DerivedInterpolationStep) => void
+  onInterpolationMethodChange: (value: TreasuryInterpolationMethod) => void
+}) {
+  const spotNodes = buildTreasurySpotCurveNodes(instruments, {
+    interpolationIntervalMonths,
+    interpolationMethod,
+  })
+  const anchorCount = spotNodes.filter((node) => node.nodeType === 'anchor').length
+  const interpolatedCount = spotNodes.length - anchorCount
+
+  return (
+    <div className="border border-border bg-background/80 p-2">
+      <div className="mb-2 border border-border bg-card/55 p-3">
+        <div className="overflow-x-auto">
+          <div className="grid min-w-max gap-3" style={{ gridTemplateColumns: workspaceHeaderGridTemplateColumns }}>
+            <div className="space-y-1">
+              <div className="h-4 text-[10px] tracking-[0.18em] text-muted-foreground">{interpolationMethodHeading}</div>
+              <Select value={interpolationMethod} onValueChange={(value) => onInterpolationMethodChange(value as TreasuryInterpolationMethod)}>
+                <SelectTrigger className="w-full min-w-0 bg-background text-left text-foreground">
+                  <SelectValue placeholder="Select method" />
+                </SelectTrigger>
+                <SelectContent align="start" position="popper" className="border-border">
+                  {derivedInterpolationMethodOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <div className="h-4 text-[10px] tracking-[0.18em] text-muted-foreground">{interpolationStepHeading}</div>
+              <Select value={String(interpolationIntervalMonths)} onValueChange={(value) => onInterpolationIntervalMonthsChange(Number(value) as DerivedInterpolationStep)}>
+                <SelectTrigger className="w-full min-w-0 bg-background text-left text-foreground">
+                  <SelectValue placeholder="Select step" />
+                </SelectTrigger>
+                <SelectContent align="start" position="popper" className="border-border">
+                  {derivedInterpolationStepOptions.map((option) => (
+                    <SelectItem key={option.value} value={String(option.value)}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <div className="h-4" aria-hidden="true" />
+              <span className={workspaceBadgeClassName}>Rate Convention: Semiannual</span>
+            </div>
+
+            <div className="space-y-1">
+              <div className="h-4" aria-hidden="true" />
+              <span className={workspaceBadgeClassName}>Anchor Nodes: {anchorCount}</span>
+            </div>
+
+            <div className="space-y-1">
+              <div className="h-4" aria-hidden="true" />
+              <span className={workspaceBadgeClassName}>Interpolated Nodes: {interpolatedCount}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-2 lg:grid-cols-[420px_minmax(0,1fr)]">
+        <div className="ag-theme-quartz-dark curve-grid h-[560px] w-full">
+          <AgGridReact<TreasurySpotCurveNode>
+            rowData={spotNodes}
+            columnDefs={spotColumnDefs}
+            defaultColDef={spotGridColDef}
+            animateRows
+            theme="legacy"
+            getRowClass={(params) => (params.data?.nodeType === 'anchor' ? 'derived-anchor-row' : 'derived-interpolated-row')}
+            getRowId={(params) => params.data.id}
+          />
+        </div>
+
+        <div className="h-[560px] border border-border bg-background/65 p-3">
+          <SpotCurveChart
+            nodes={spotNodes}
+            ariaLabel="Treasury spot rate by year fraction chart"
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function DatasetLayerWorkspace({
   instruments,
   selectedCurveStatus,
@@ -783,8 +1023,8 @@ function DatasetLayerWorkspace({
 
 function ActiveCurveGrid() {
   const [activeTab, setActiveTab] = useState<CurveWorkspaceTabKey>('dataset')
-  const [interpolationIntervalMonths, setInterpolationIntervalMonths] = useState<DerivedInterpolationStep>(1)
-  const [interpolationMethod, setInterpolationMethod] = useState<TreasuryInterpolationMethod>('linear_discount_factor')
+  const [interpolationIntervalMonths, setInterpolationIntervalMonths] = useState<DerivedInterpolationStep>(6)
+  const [interpolationMethod, setInterpolationMethod] = useState<TreasuryInterpolationMethod>('log_linear_discount_factor')
   const selectedCurveData = useAppSelector(selectSelectedCurveData)
   const bootstrapInstruments = useAppSelector(selectSelectedCurveLatestBootstrapInstruments)
   const latestQuoteDate = useAppSelector(selectSelectedCurveLatestQuoteDate)
@@ -884,28 +1124,35 @@ function ActiveCurveGrid() {
         ) : null}
 
         {activeTab === 'spot' ? (
-          <PlaceholderPanel
-            badges={['Bootstrap Engine: Placeholder', 'Input: Derived Layer', 'Rate Convention: TBD', 'Zero Nodes: Pending']}
-            eyebrow="SPOT CURVE"
-            title="Spot-rate output placeholder"
-            description="This tab will surface the bootstrapped zero curve table once the derived discount-factor layer and curve-solving logic are in place."
-            viewportLabel="Spot-curve AG Grid placeholder"
-          />
-        ) : null}
+          <>
+            {selectedCurveData?.status === 'failed' ? (
+              <div className="border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive-foreground">
+                {selectedCurveData.error ?? 'Unable to load curve data.'}
+              </div>
+            ) : null}
 
-        {activeTab === 'chart' ? (
-          <PlaceholderPanel
-            badges={[
-              `Underlying Data: ${selectedCurveData?.status ?? 'idle'}`,
-              `Last Fetch: ${formatTimestamp(selectedCurveData?.fetchedAt ?? null)}`,
-              'Library: AG Charts',
-              'Series: Spot Curve',
-            ]}
-            eyebrow="CURVE CHART"
-            title="Visualization placeholder"
-            description="This tab will render the final spot curve visually, with room for later overlays such as par yields, forwards, or selected node markers."
-            viewportLabel="AG Charts spot-curve placeholder"
-          />
+            {selectedCurveData?.status === 'loading' && bootstrapInstruments.length === 0 ? (
+              <div className="border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
+                Loading the public Treasury bootstrap dataset...
+              </div>
+            ) : null}
+
+            {selectedCurveData?.status === 'succeeded' && bootstrapInstruments.length === 0 ? (
+              <div className="border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
+                No bootstrap instruments were produced for this Treasury dataset.
+              </div>
+            ) : null}
+
+            {bootstrapInstruments.length > 0 ? (
+              <SpotCurveWorkspace
+                instruments={bootstrapInstruments}
+                interpolationIntervalMonths={interpolationIntervalMonths}
+                interpolationMethod={interpolationMethod}
+                onInterpolationIntervalMonthsChange={setInterpolationIntervalMonths}
+                onInterpolationMethodChange={setInterpolationMethod}
+              />
+            ) : null}
+          </>
         ) : null}
       </div>
     </section>

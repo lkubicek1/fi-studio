@@ -518,7 +518,7 @@ function createTreasuryBillBootstrapInstruments(
       auctionHighPrice: null,
       auctionHighYield: null,
       daysToMaturity,
-      yearFractionToMaturity: calculateYearFraction(settlementDate, maturityDate, 'ACT/360'),
+      yearFractionToMaturity: calculateYearFraction(settlementDate, maturityDate, 'ACT/ACT'),
       previousCouponDate: null,
       nextCouponDate: null,
       remainingCouponCount: null,

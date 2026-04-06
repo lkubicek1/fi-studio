@@ -50,6 +50,13 @@ export type TreasuryDerivedCurveNode = {
   methodLabel: string
 }
 
+export type TreasurySpotRateConvention = 'semiannual_bond_equivalent'
+
+export type TreasurySpotCurveNode = TreasuryDerivedCurveNode & {
+  spotRate: number
+  spotRateConvention: TreasurySpotRateConvention
+}
+
 type DiscountFactorAnchor = TreasuryDerivedCurveNode
 
 type TreasuryCouponCashFlow = {
@@ -484,6 +491,26 @@ function createInterpolatedDisplayNodes(
   return interpolationNodes
 }
 
+function deriveSpotRateFromDiscountFactor(
+  discountFactor: number,
+  yearFraction: number,
+  spotRateConvention: TreasurySpotRateConvention,
+) {
+  if (discountFactor <= 0 || yearFraction <= 0) {
+    return null
+  }
+
+  switch (spotRateConvention) {
+    case 'semiannual_bond_equivalent': {
+      const spotRate = 2 * (Math.pow(discountFactor, -1 / (2 * yearFraction)) - 1)
+
+      return Number.isFinite(spotRate) ? spotRate * 100 : null
+    }
+    default:
+      return null
+  }
+}
+
 export function addBusinessDays(dateText: string | null, businessDays: number) {
   const startDate = parseIsoDate(dateText)
 
@@ -690,9 +717,9 @@ export function buildTreasuryDerivedCurveNodes(
   instruments: TreasuryDiscountCurveInstrument[],
   options?: { interpolationIntervalMonths?: number; interpolationMethod?: TreasuryInterpolationMethod },
 ) {
-  const interpolationMethod = options?.interpolationMethod ?? 'linear_discount_factor'
+  const interpolationMethod = options?.interpolationMethod ?? 'log_linear_discount_factor'
   const anchors = bootstrapDiscountFactorAnchors(instruments, interpolationMethod)
-  const interpolationIntervalMonths = options?.interpolationIntervalMonths ?? 1
+  const interpolationIntervalMonths = options?.interpolationIntervalMonths ?? 6
   const interpolatedNodes = createInterpolatedDisplayNodes(anchors, interpolationIntervalMonths, interpolationMethod)
 
   return [...anchors, ...interpolatedNodes].sort((left, right) => {
@@ -707,5 +734,36 @@ export function buildTreasuryDerivedCurveNodes(
     }
 
     return left.nodeType === 'anchor' ? -1 : 1
+  })
+}
+
+export function buildTreasurySpotCurveNodes(
+  instruments: TreasuryDiscountCurveInstrument[],
+  options?: {
+    interpolationIntervalMonths?: number
+    interpolationMethod?: TreasuryInterpolationMethod
+    spotRateConvention?: TreasurySpotRateConvention
+  },
+) {
+  const spotRateConvention = options?.spotRateConvention ?? 'semiannual_bond_equivalent'
+  const derivedNodes = buildTreasuryDerivedCurveNodes(instruments, {
+    interpolationIntervalMonths: options?.interpolationIntervalMonths,
+    interpolationMethod: options?.interpolationMethod,
+  })
+
+  return derivedNodes.flatMap<TreasurySpotCurveNode>((node) => {
+    const spotRate = deriveSpotRateFromDiscountFactor(node.discountFactor, node.yearFraction, spotRateConvention)
+
+    if (spotRate === null) {
+      return []
+    }
+
+    return [
+      {
+        ...node,
+        spotRate: normalizeCurveCoordinate(spotRate),
+        spotRateConvention,
+      },
+    ]
   })
 }

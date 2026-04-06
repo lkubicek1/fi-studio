@@ -8,7 +8,7 @@ export type CurveSourceComponent = {
 export type CurveSource = {
   key: string
   title: string
-  kind: string
+  type: string
   market: string
   description: string
   sourceComponents: CurveSourceComponent[]

@@ -250,16 +250,16 @@
   background-color: rgb(255 255 255 / 0.012) !important;
 }
 
-.curve-grid.ag-theme-quartz-dark .ag-cell.derived-kind-cell {
+.curve-grid.ag-theme-quartz-dark .ag-cell.derived-type-cell {
   font-size: 9px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
-.curve-grid.ag-theme-quartz-dark .ag-cell.derived-kind-anchor {
+.curve-grid.ag-theme-quartz-dark .ag-cell.derived-type-anchor {
   color: var(--primary) !important;
 }
 
-.curve-grid.ag-theme-quartz-dark .ag-cell.derived-kind-interpolated {
+.curve-grid.ag-theme-quartz-dark .ag-cell.derived-type-interpolated {
   color: var(--muted-foreground) !important;
 }
