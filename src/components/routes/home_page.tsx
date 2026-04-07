@@ -25,6 +25,11 @@ function HomePage() {
             <CurveSourceSummary />
           </div>
         </div>
+        <div className="mb-3 border border-amber-500/30 bg-amber-500/10 px-4 py-3 mt-2 text-sm text-muted-foreground">
+          Educational use only. Prices shown here are derived from free public Treasury data and benchmark rates, not live market prices.
+        </div>
+
+
       </section>
 
       <div className="relative z-10 -mt-2">
